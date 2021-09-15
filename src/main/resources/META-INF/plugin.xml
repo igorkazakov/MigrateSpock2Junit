@@ -1,0 +1,21 @@
+<idea-plugin>
+    <id>ru.alfabank.Spock2Junit</id>
+    <name>Spock2Junit</name>
+    <vendor email="support@igorek.com" url="http://www.igorek228.com">Igorek228Limited</vendor>
+
+    <!-- please see https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html
+         on how to target different products -->
+    <depends>com.intellij.modules.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Add your extensions here -->
+    </extensions>
+
+    <actions>
+        <action id="ru.alfabank.action.ConvertSpockToJunit" class="ru.alfabank.action.ConvertSpockToJunit"
+                text="Convert Spock to JUnit1"
+                description="Сonverts tests written in groovy Spock to kotlin Junit tests">
+            <add-to-group group-id="CodeMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

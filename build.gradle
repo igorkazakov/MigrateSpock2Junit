@@ -1,0 +1,68 @@
+buildscript {
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.4.32"
+    }
+}
+
+plugins {
+    id 'org.jetbrains.intellij' version '0.4.21'//'1.0'
+    //id 'org.jetbrains.kotlin.jvm' version '1.4.21'//
+}
+
+apply plugin: 'kotlin'
+
+group 'ru.alfabank'
+version '1.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+   // implementation "org.jetbrains.kotlin:kotlin-compiler:1.4.32"
+   // implementation "org.jetbrains.kotlin:kotlin-compiler-embeddable:1.4.21"
+
+//    implementation 'org.codehaus.groovy:groovy-all:3.0.5'
+//
+//    implementation "org.hamcrest:hamcrest-library:1.3"
+//    implementation "cglib:cglib-nodep:3.2.6"
+//    implementation "org.objenesis:objenesis:2.6"
+//    implementation "org.spockframework:spock-core:1.3-groovy-2.5"
+
+//    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.6.0'
+//    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
+//    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+//    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+}
+
+
+
+
+
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
+compileTestKotlin {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
+// See https://github.com/JetBrains/gradle-intellij-plugin/
+intellij {
+    version = '2019.3.3'//'2021.1.3'//
+    plugins = ['Groovy', 'java', 'properties']
+    updateSinceUntilBuild = false
+}
+patchPluginXml {
+    changeNotes = """
+      Add change notes here.<br>
+      <em>most HTML tags may be used</em>"""
+}
+//test {
+//    useJUnitPlatform()
+//}
