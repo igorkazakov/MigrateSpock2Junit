@@ -1,15 +1,12 @@
 package ru.alfabank.converters
 
-import com.intellij.lang.Language
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementFactory
 import com.intellij.psi.PsiFile
-import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.impl.source.tree.PsiCommentImpl
-import com.intellij.util.LocalTimeCounter
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrLabeledStatement
@@ -20,7 +17,6 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlo
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrAssertStatement
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrAssignmentExpression
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrMethodCallExpression
@@ -420,7 +416,7 @@ class SpockToJunitConverter(
         when (currentLabel) {
             TEST_LIFECYCLE_METHOD, GIVEN -> {
                 print("изменяем в GIVEN")
-
+// нужно проверять и обрабатывать случаи когда в given есть проверка вызова!!!
                 val callObject = methodCall.children[0].children[0].text
                 val methodCallString = methodCall.children[0].lastChild.text
                 val methodCallArgumentStrings = methodArguments.map { it.text }
@@ -665,43 +661,9 @@ class SpockToJunitConverter(
         val arguments = method.parameterList.parameters.map {
             "${it.name}: ${it.typeElement?.text}"
         }.joinToString(", ")
-       // val file: PsiFile = PsiFileFactory.getInstance(project).createFileFromText(Language.findLanguageByID("kotlin")!!, "val text = 10")
-       // val kotlinParametersList = groovyFactory.createExpressionFromText("(arguments)", method.parameterList)
-    //    method.parameterList.replace()
-//val params = try {
-  //  KtPsiFactory(project, true).createCallArguments(arguments)
-//} catch (e: Exception) {
-//    null
-//}
 
-
-//        val file = PsiFileFactory.getInstance(project).createFileFromText(
-//            "fileNameKotlin.kt",
-//            KotlinFileType.INSTANCE,
-//            "val property: Int = 1488",
-//            LocalTimeCounter.currentTime(),
-//            false,
-//            true
-//        )
-//
-//        val file2 = PsiFileFactory.getInstance(project).createFileFromText(
-//            "fileNameKotlin.kt",
-//            KotlinLanguage.INSTANCE,
-//            "val property: Int = 1488",
-//            true,
-//            true,
-//            true
-//        )
+groovyFactory.createArgumentList()
+        val fak = KotlinPsiFactory().getKtPsiFactory()
         print("замена аргументов")
-    }
-
-
-    fun createExpressionFromText(text: String, context: PsiElement?): GrExpression? {
-        val file: PsiFile = PsiFileFactory.getInstance(project).createFileFromText(Language.findLanguageByID("kotlin")!!, text) //(text, false, context)
-//        val topStatements = file.topStatements
-//        if (topStatements.size == 0 || topStatements[0] !is GrExpression) {
-//            throw IncorrectOperationException("incorrect expression = '$text'")
-//        }
-        return null//topStatements[0] as GrExpression
     }
 }
