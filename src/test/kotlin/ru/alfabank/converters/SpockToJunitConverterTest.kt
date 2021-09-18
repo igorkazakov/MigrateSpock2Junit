@@ -4,7 +4,11 @@ import basetest.test.BaseTest
 
 class SpockToJunitConverterTest : BaseTest() {
 
-    fun testTransformToJunit() = spockToJunit()
+    override fun actualFileName() = "TestSpock.groovy"
 
-    override fun getTestPath() = "allconverterstest"
+    override fun expectedFileName() = "TestJunit.groovy"
+
+    override fun getTestFolder() = "allconverterstest"
+
+    fun testTransformToJunit() = runSpockToJunitConverter()
 }

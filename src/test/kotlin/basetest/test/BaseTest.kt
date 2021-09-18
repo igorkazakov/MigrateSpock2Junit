@@ -2,12 +2,15 @@ package basetest.test
 
 import com.intellij.openapi.project.DumbService
 import com.intellij.testFramework.LightProjectDescriptor
-import com.intellij.testFramework.fixtures.DefaultLightProjectDescriptor
 import ru.alfabank.converters.SpockToJunitConverter
 
 abstract class BaseTest : LightTestCase() {
 
-    abstract fun getTestPath() : String
+    abstract fun actualFileName() : String
+
+    abstract fun expectedFileName() : String
+
+    abstract fun getTestFolder() : String
 
     override fun getTestDataPath() = "src/test/resources/testdata"
 
@@ -16,12 +19,12 @@ abstract class BaseTest : LightTestCase() {
         return GroovyProjectDescriptors.GROOVY_2_5_JUNIT_SPOCK_1_HAMCREST
     }
 
-    protected fun spockToJunit() {
+    protected fun runSpockToJunitConverter() {
         // otherwise class Book is not found and i.e. property style replacement does not work
        // myFixture.copyDirectoryToProject("lib", "lib")
 
         // copies from #getTestDataPath to test project and opens in editor
-        val psiFile = myFixture.configureByFile("${getTestPath()}/${getTestName(true)}/TestSpock.groovy")
+        val psiFile = myFixture.configureByFile("${getTestFolder()}/${actualFileName()}")
 
         DumbService.getInstance(project).runWhenSmart {
             //GroovyConverter.replaceCurlyBracesInAnnotationAttributes(psiFile, project)
@@ -32,7 +35,7 @@ abstract class BaseTest : LightTestCase() {
             SpockToJunitConverter(project, editor, psiFile).transformToJunit()
         }
 
-        myFixture.checkResultByFile("${getTestPath()}/${getTestName(true)}/TestJunit.groovy", true)
+        myFixture.checkResultByFile("${getTestFolder()}/${expectedFileName()}", true)
     }
 
 //    protected fun javaToGroovy() {

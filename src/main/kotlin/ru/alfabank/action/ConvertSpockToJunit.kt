@@ -27,6 +27,9 @@ class ConvertSpockToJunit : AnAction() {
         val currentFile = event.getRequiredData(PlatformDataKeys.VIRTUAL_FILE)
         val editor = event.getRequiredData(PlatformDataKeys.EDITOR)
 
+//        val newfile = currentFile.copy(currentFile, currentFile.parent, "qwerty123")
+//
+//        val newfile22 = KotlinPsiFileFactory().acquirePsiFileFactory().createFileFromText("qwertyKotlin.kt", KotlinLanguage.INSTANCE, "")
         val groovyPsiFile = requireNotNull(PsiManager.getInstance(project).findFile(currentFile))
 
         DumbService.getInstance(project).runWhenSmart {

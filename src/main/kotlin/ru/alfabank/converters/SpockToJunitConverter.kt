@@ -56,9 +56,6 @@ class SpockToJunitConverter(
     private val groovyFactory
         get() = GroovyPsiElementFactory.getInstance(project)
 
-    private val groovyFactory11
-        get() = PsiElementFactory.getInstance(project)
-
     private var givenBlockFirstElement: PsiElement? = null
 
     private val groovyFile
@@ -361,9 +358,11 @@ class SpockToJunitConverter(
         val lastExpressionInLambda = (expression.rightOperand as? GrClosableBlock)?.statements?.lastOrNull()
         if (lastExpressionInLambda !is GrAssertStatement &&
             lastExpressionInLambda !is GrRelationalExpressionImpl &&
-            lastExpressionInLambda !is GrAssignmentExpression) {
+            lastExpressionInLambda !is GrAssignmentExpression
+        ) {
 
-            val mockExpression = groovyFactory.createStatementFromText("${methodCall.text} >> ${lastExpressionInLambda?.text}") as GrShiftExpressionImpl
+            val mockExpression =
+                groovyFactory.createStatementFromText("${methodCall.text} >> ${lastExpressionInLambda?.text}") as GrShiftExpressionImpl
             val convertedMockExpression = convertMockCallMethod(GIVEN, mockExpression)
             convertedMockExpression?.let {
                 givenBlockFirstElement?.addAfter(it)
@@ -422,11 +421,12 @@ class SpockToJunitConverter(
                 val methodCallArgumentStrings = methodArguments.map { it.text }
 
                 val assertStatementsInLambda = (expression.rightOperand as? GrClosableBlock)?.statements?.mapNotNull {
-                   // (it as? GrAssertStatement)?.assertion?.lastChild?.text
+                    // (it as? GrAssertStatement)?.assertion?.lastChild?.text
                     if (it is GrMethodCallExpression) {
                         print("если это вызов метода, то надо проверить и сконвертить его аргументы на предмет моков")
                         val newArgumentsArray = (it as GrMethodCallExpressionImpl).argumentList.allArguments.map {
-                            val argumentMethodName = (it as? GrMethodCallExpressionImpl)?.navigationElement?.firstChild?.text
+                            val argumentMethodName =
+                                (it as? GrMethodCallExpressionImpl)?.navigationElement?.firstChild?.text
                             if (argumentMethodName == "Mock") {
                                 val classArgument = it.argumentList.allArguments.getOrNull(0)?.text ?: "IgorekClassName"
                                 "mock<$classArgument>()"
@@ -443,24 +443,25 @@ class SpockToJunitConverter(
                     }
                 }?.toMutableList()
 
-                val kotlinLambdaParametersString = (expression.rightOperand as? GrClosableBlock)?.allParameters?.mapIndexed { index, grParameter ->
+                val kotlinLambdaParametersString =
+                    (expression.rightOperand as? GrClosableBlock)?.allParameters?.mapIndexed { index, grParameter ->
 
-                    val parameterName = grParameter.name
-                    if (!parameterName.matches(ARGUMENT_WILDCARD_PATTERN)) {
-                        val parameterType = grParameter.declaredType?.canonicalText
-                        val parameterTypeString = if (parameterType != null) {
-                            "as $parameterType"
+                        val parameterName = grParameter.name
+                        if (!parameterName.matches(ARGUMENT_WILDCARD_PATTERN)) {
+                            val parameterType = grParameter.declaredType?.canonicalText
+                            val parameterTypeString = if (parameterType != null) {
+                                "as $parameterType"
+                            } else {
+                                ""
+                            }
+                            "val $parameterName = it.arguments[$index] $parameterTypeString"
                         } else {
                             ""
                         }
-                        "val $parameterName = it.arguments[$index] $parameterTypeString"
-                    } else {
-                        ""
-                    }
 
-                }
-                    ?.filter { it.isNotEmpty() }
-                    ?: emptyList()
+                    }
+                        ?.filter { it.isNotEmpty() }
+                        ?: emptyList()
 
                 assertStatementsInLambda?.addAll(0, kotlinLambdaParametersString)
                 val convertLambdaStatements = assertStatementsInLambda?.joinToString("\n")
@@ -544,10 +545,12 @@ class SpockToJunitConverter(
             } else {
 //ShareUtils shareUtils = Mock()
                 //тут проверить initializer это мок??
-                if(initializerGroovy?.text == "null") {
-                    val statement1 = factory.createStatementFromText("$name: ${fieldClass.text}")
+                if (initializerGroovy?.text == "null") {
+                    //val statement1 = factory.createStatementFromText("$name: ${fieldClass.text}")
+
                     fieldClass.replace(valExpr)
-                    this.replace(statement1)
+                    replaceWithKotlinTypeDeclaration(this, name, fieldClass.text)
+                    //this.replace(statement1)
                 } else if (isMock()) {
                     convertMockStatement(
                         fieldClass,
@@ -648,22 +651,27 @@ class SpockToJunitConverter(
     }
 
     private fun GrMethod.isTestMethod(): Boolean {
-        val containsTestAnnotation = this.modifierList.modifiers.any {  it.text == "@Test" || it.text == "@Before" ||  it.text == "@After" }
+        val containsTestAnnotation =
+            this.modifierList.modifiers.any { it.text == "@Test" || it.text == "@Before" || it.text == "@After" }
         val methodBlock = this.block as GrOpenBlock
         return (methodBlock.text.contains(GIVEN) ||
-            methodBlock.text.contains(WHEN) ||
-            methodBlock.text.contains(EXPECT) ||
+                methodBlock.text.contains(WHEN) ||
+                methodBlock.text.contains(EXPECT) ||
                 containsTestAnnotation)
 
     }
 
     private fun convertMethodArguments(method: GrMethod) {
-        val arguments = method.parameterList.parameters.map {
-            "${it.name}: ${it.typeElement?.text}"
-        }.joinToString(", ")
+        method.parameterList.parameters.forEach {
+            replaceWithKotlinTypeDeclaration(it, it.name, it.typeElement?.text.orEmpty())
+        }
+    }
 
-groovyFactory.createArgumentList()
-        val fak = KotlinPsiFactory().getKtPsiFactory()
-        print("замена аргументов")
+    private fun replaceWithKotlinTypeDeclaration(element: PsiElement, variableName: String, variableType: String) {
+        val colonElement = groovyFactory.createStatementFromText("label: labeled").firstChild.nextSibling
+        val assignmentStatement = groovyFactory.createStatementFromText("$variableName= $variableType")
+        val replacedElement = element.replace(assignmentStatement)
+        // replace = with :
+        replacedElement.firstChild.nextSibling.replace(colonElement)
     }
 }

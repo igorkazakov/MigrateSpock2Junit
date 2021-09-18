@@ -1,4 +1,4 @@
-package testdata.allconverterstest.transformtojunit
+package testdata.allconverterstest
 
 import kotlin.Unit
 import kotlin.jvm.functions.Function1
@@ -99,7 +99,7 @@ class Mediator extends ElectricSpecification {
     }
 
     @Unroll
-    def 'should open 1234'() {
+    def 'should open 1234'(Number url23) {
         expect:
         presenterRule.nextActivity(AboutActivity)
     }

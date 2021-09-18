@@ -1,4 +1,4 @@
-package testdata.allconverterstest.transformtojunit
+package testdata.allconverterstest
 
 import kotlin.Unit
 import kotlin.jvm.JvmField
@@ -65,11 +65,10 @@ class Mediator {
             observer.onSubscribe(mock<Disposable>())
             observer.onSuccess(expectedResponse)
         }
-        val resultConsumer:
-        Function1<OperationConfirmationResultModel, Unit>
+        val resultConsumer: Function1<OperationConfirmationResultModel, Unit>
         val expectedAction = null
         whenever(router.registerOperationConfirmationResult(any(), eq(23))) doAnswer {
-            val actualConsumer = it.arguments[0] as Function1<OperationConfirmationResultModel, Unit>
+            val actualConsumer = it.arguments[0] as kotlin.jvm.functions.Function1<OperationConfirmationResultModel, kotlin.Unit>
             resultConsumer = actualConsumer
         }
         presenterRule.onStart(mock<Context>())
@@ -97,12 +96,12 @@ class Mediator {
 
     @Test
     @Unroll
-    fun should_open_1234() {
+    fun should_open_1234(url23: Number) {
         // expect
         assertTrue(presenterRule.nextActivity(AboutActivity))
     }
 
-    fun should_open_AboutActivity2() {
+    fun should_open_AboutActivity2(url: String, screenTitle: String, paySupported: Boolean) {
         presenterRule.nextActivity(AboutActivity)
     }
 
