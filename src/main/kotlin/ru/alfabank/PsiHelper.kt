@@ -65,11 +65,7 @@ fun GrMethod.deleteSingleQuotesFromMethodName() {
 
 fun GrModifierList.replaceDefWith(modifier: String) {
     val funModifier = GroovyPsiElementFactory.getInstance(project).createModifierFromText(modifier)
-    val defModifier = try {
-        this.modifiers.first { it.text == "def" }
-    } catch (e: NoSuchElementException) {
-        null
-    }
+    val defModifier = this.modifiers.firstOrNull { it.text == "def" }
     defModifier?.replace(funModifier)
 }
 
@@ -125,57 +121,4 @@ fun PsiElement.createCommentElement(text: String): PsiElement {
                                     expression // $text
                                 """)
     return methodBody.childrenOfType<PsiComment>()[0]
-}
-
-
-//fun GrVariable.convertVariableDeclaration() {
-//    val variableDeclaration = (parent as GrVariableDeclaration)
-//    val factory = GroovyPsiElementFactory.getInstance(project)
-//
-//    val valExpr = factory.createExpressionFromText("val")
-//    val fieldClass = variableDeclaration.getTypeElementGroovyForVariable(this)
-//    if (fieldClass != null) {
-//
-//        if (initializer == null) {
-//            val statement1 = factory.createExpressionFromText("${name} = ${fieldClass.text}()")
-//            fieldClass.replace(valExpr)
-//            this.replace(statement1)
-//        } else {
-//            if ((initializer as GrSyntheticExpression).navigationElement is GrNewExpression) {
-//                (initializer as GrSyntheticExpression).navigationElement.firstChild.delete()
-//            }
-//
-//            fieldClass.replace(valExpr)
-//        }
-//
-//    } else {
-//        (initializer as? GrSyntheticExpression)?.navigationElement?.firstChild?.delete()
-//        variableDeclaration.modifierList.replaceDefWith("val")
-//    }
-//}
-
-fun GrMethodCall.convertMethodCallDeclaration() {
-//    val variableDeclaration = (parent as GrVariableDeclaration)
-//    val factory = GroovyPsiElementFactory.getInstance(project)
-//
-//    val valExpr = factory.createExpressionFromText("val")
-//    val fieldClass = variableDeclaration.getTypeElementGroovyForVariable(this)
-//    if (fieldClass != null) {
-//
-//        if (initializer == null) {
-//            val statement1 = factory.createExpressionFromText("${name} = ${fieldClass.text}()")
-//            fieldClass.replace(valExpr)
-//            this.replace(statement1)
-//        } else {
-//            if ((initializer as GrSyntheticExpression).navigationElement is GrNewExpression) {
-//                (initializer as GrSyntheticExpression).navigationElement.firstChild.delete()
-//            }
-//
-//            fieldClass.replace(valExpr)
-//        }
-//
-//    } else {
-//        (initializer as? GrSyntheticExpression)?.navigationElement?.firstChild?.delete()
-//        variableDeclaration.modifierList.replaceDefWith("val")
-//    }
 }

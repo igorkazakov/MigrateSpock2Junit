@@ -1,5 +1,6 @@
 package testdata.allconverterstest
 
+import com.google.gson.JsonPrimitive
 import kotlin.Unit
 import kotlin.jvm.functions.Function1
 import org.junit.ClassRule
@@ -111,5 +112,19 @@ class Mediator extends ElectricSpecification {
     def setup() {
         feature1.load() >> null
         presenterRule.nextActivity(AboutActivity)
+    }
+
+    @Unroll
+    def 'should deserialize string'() {
+        when:
+        def actual = serializer.deserialize(new JsonPrimitive(initialString), String, context)
+        then:
+        actual == expected
+        where:
+        initialString    | expected    | expected777
+        "initialString1" | "expected1" | "expected7771"
+        "initialString2" | "expected2" | "expected7772"
+        "initialString3" | "expected3" | "expected7773"
+        "initialString4" | "expected4" | "expected7774"
     }
 }

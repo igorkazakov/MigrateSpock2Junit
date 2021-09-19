@@ -95,7 +95,6 @@ class Mediator {
     }
 
     @Test
-    @Unroll
     fun should_open_1234(url23: Number) {
         // expect
         assertTrue(presenterRule.nextActivity(AboutActivity))
