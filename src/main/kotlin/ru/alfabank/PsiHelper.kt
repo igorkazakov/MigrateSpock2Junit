@@ -58,7 +58,7 @@ fun PsiElement.addAfter(element: PsiElement): PsiElement {
 
 fun GrMethod.deleteSingleQuotesFromMethodName() {
     val factory = GroovyPsiElementFactory.getInstance(project)
-    val methodName = name.replace(" ", "_")
+    val methodName = name.replace(" #+| +|#+".toRegex(), "_")
     val methodFromText = factory.createMethodFromText("def $methodName() {}")
     nameIdentifierGroovy.replace(methodFromText.nameIdentifierGroovy)
 }

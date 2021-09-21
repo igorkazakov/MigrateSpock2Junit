@@ -1,5 +1,6 @@
 package testdata.allconverterstest
 
+import com.google.gson.JsonPrimitive
 import kotlin.Unit
 import kotlin.jvm.JvmField
 import kotlin.jvm.functions.Function1
@@ -108,5 +109,49 @@ class Mediator {
     fun setup() {
         whenever(feature1.load()).doReturn(null)
         presenterRule.nextActivity(AboutActivity)
+    }
+
+    class ShouldDeserializeStringProvider : ArgumentsProvider {
+
+        fun getArguments() : Array<Array<*>> {
+            return arrayOf(
+                    arrayOf("initialString1", "expected1", "expected7771"),
+                    arrayOf("initialString2", Chelik(), "expected7772"),
+                    arrayOf("initialString3", "expected3", "expected7773"),
+                    arrayOf("initialString4", "expected4", Parent())
+            )
+        }
+    }
+
+    @TestWithParameters(ShouldDeserializeStringProvider::Class)
+    fun should_deserialize_string(initialString: Any, expected: Any, expected777: Any) {
+        // when
+        val actual = serializer.deserialize(JsonPrimitive(initialString), String, context)
+        // then
+        assertEquals(actual, expected)
+    }
+
+    class ShouldApplyDateFilterWhenCalendarScreenClosedAndNameProvider : ArgumentsProvider {
+
+        fun getArguments() : Array<Array<*>> {
+            return arrayOf(
+                    arrayOf(OperationsHistoryTestDataKt.getCalendarScreenSuccessResultModel(), OperationsHistoryTestDataKt.getTestOperationsHistoryFilterAfterPickCalendarRange(), "new range selected"),
+                    arrayOf(OperationsHistoryTestDataKt.getCalendarScreenResetResultModel(), OperationsHistoryTestDataKt.getTestOperationsHistoryFilterAfterResetCalendarRange(), "reset selected range")
+            )
+        }
+    }
+
+    @TestWithParameters(ShouldApplyDateFilterWhenCalendarScreenClosedAndNameProvider::Class)
+    fun should_apply_date_filter_when_calendar_screen_closed_and_name(resultModel: Any, expectedFilter: Any, name: Any) {
+        // given
+        val filter = OperationsHistoryTestDataKt.getTestOperationsHistoryFilterBeforePickCalendarRange()
+        whenever(quickChipsMapper.mapToModel(any())).doReturn(OperationsHistoryTestDataKt.getQuickChipsModel())
+        // and
+        presenter.onViewCreated()
+        whenever(mediator.startAboutActivity(eq(presenterRule.activity))).doReturn(MediatorResult())
+        // when
+        activityResultCallback.invoke(resultModel)
+        // then
+        verify(quickChipsMapper).mapToModel(eq(expectedFilter))
     }
 }

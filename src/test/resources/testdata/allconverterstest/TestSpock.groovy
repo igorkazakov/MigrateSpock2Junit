@@ -53,6 +53,7 @@ class Mediator extends ElectricSpecification {
             observer.onSubscribe(Mock(Disposable))
             observer.onSuccess(expectedResponse)
         }
+        1 * prese34nter.onShare()
         Function1<OperationConfirmationResultModel, Unit> resultConsumer = null
         def expectedAction = null
         router.registerOperationConfirmationResult(_, 23) >> { Function1<OperationConfirmationResultModel, Unit> actualConsumer ->
@@ -121,10 +122,39 @@ class Mediator extends ElectricSpecification {
         then:
         actual == expected
         where:
-        initialString    | expected    | expected777
-        "initialString1" | "expected1" | "expected7771"
-        "initialString2" | "expected2" | "expected7772"
-        "initialString3" | "expected3" | "expected7773"
-        "initialString4" | "expected4" | "expected7774"
+        initialString    | expected     | expected777
+        "initialString1" | "expected1"  | "expected7771"
+        "initialString2" | new Chelik() | "expected7772"
+        "initialString3" | "expected3"  | "expected7773"
+        "initialString4" | "expected4"  | new Parent()
+    }
+
+    @Unroll
+    def 'should apply date filter when calendar screen closed and #name'() {
+        given:
+        def filter = OperationsHistoryTestDataKt.getTestOperationsHistoryFilterBeforePickCalendarRange()
+        and:
+        presenter.onViewCreated()
+        mediator.startAboutActivity(presenterRule.activity) >> MediatorResult()
+        when:
+        activityResultCallback.invoke(resultModel)
+        then:
+        1 * quickChipsMapper.mapToModel(_) >> { OperationsHistoryFilter actualFilter ->
+            assert actualFilter == expectedFilter
+            OperationsHistoryTestDataKt.getQuickChipsModel()
+        }
+        where:
+        [resultModel, expectedFilter, name] << [
+                [
+                        OperationsHistoryTestDataKt.getCalendarScreenSuccessResultModel(),
+                        OperationsHistoryTestDataKt.getTestOperationsHistoryFilterAfterPickCalendarRange(),
+                        "new range selected"
+                ],
+                [
+                        OperationsHistoryTestDataKt.getCalendarScreenResetResultModel(),
+                        OperationsHistoryTestDataKt.getTestOperationsHistoryFilterAfterResetCalendarRange(),
+                        "reset selected range"
+                ]
+        ]
     }
 }

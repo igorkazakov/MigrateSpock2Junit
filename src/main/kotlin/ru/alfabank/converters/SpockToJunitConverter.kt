@@ -4,11 +4,9 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiElementFactory
 import com.intellij.psi.PsiFile
 import com.intellij.psi.impl.source.tree.PsiCommentImpl
-import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
-import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory
+import org.jetbrains.plugins.groovy.lang.psi.*
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierList
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrLabeledStatement
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrStatement
@@ -23,13 +21,16 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExp
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrMethodCallExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrClassTypeElement
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeElement
 import org.jetbrains.plugins.groovy.lang.psi.impl.auxiliary.GrListOrMapImpl
+import org.jetbrains.plugins.groovy.lang.psi.impl.statements.GrLabeledStatementImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.arguments.GrArgumentListImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.blocks.GrClosableBlockImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.branch.GrReturnStatementImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.arithmetic.GrMultiplicativeExpressionImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.arithmetic.GrShiftExpressionImpl
+import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.bitwise.GrBitwiseExpressionImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.literals.GrLiteralImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.path.GrMethodCallExpressionImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.relational.GrRelationalExpressionImpl
@@ -40,7 +41,7 @@ private const val WHEN = "// when"
 private const val GIVEN = "// given"
 private const val THEN = "// then"
 private const val EXPECT = "// expect"
-private const val WHERE = "// where"
+private const val AND_LABEL = "// and"
 private const val TEST_LIFECYCLE_METHOD = "// test lifecycle"
 
 private const val SINGLE_ARGUMENT_WILDCARD = "_"
@@ -67,7 +68,7 @@ class SpockToJunitConverter(
     private val replaceQueue = mutableListOf<Pair<PsiElement, PsiElement>>()
 
     fun transformToJunit() {
-
+        deleteAllNewKeyWord()
 // add runwith annotation and delete extends
         WriteCommandAction.runWriteCommandAction(project, null, null, Runnable {
 
@@ -206,7 +207,10 @@ class SpockToJunitConverter(
                     element.let {
                         when (it) {
                             is GrLabeledStatement -> {
-                                currentLabel = it.firstChild.text
+                                if (it.firstChild.text != AND_LABEL) {
+                                    //меняем контекст, так как для given when и then нужно по разному конвертировать выражения
+                                    currentLabel = it.firstChild.text
+                                }
                                 (it.lastChild as? GrVariableDeclaration)?.variables?.first()
                                     ?.convertVariableDeclaration()
                                 (it.lastChild as? GrMethodCallExpression)?.let { callExpr ->
@@ -265,6 +269,30 @@ class SpockToJunitConverter(
             replaceQueue.clear()
 
         }, psiFile)
+    }
+
+    private fun deleteAllNewKeyWord() {
+        WriteCommandAction.runWriteCommandAction(project, null, null, {
+            recursivelyVisitAllElements(psiFile) {
+                if (it is GrNewExpression) {
+                    it.navigationElement.firstChild.delete()
+                }
+            }
+        }, psiFile)
+    }
+
+    private fun recursivelyVisitAllElements(source: PsiElement, visitAction: (element: GroovyPsiElement) -> Unit) {
+        source.accept(
+            GroovyPsiElementVisitor(
+                object : GroovyRecursiveElementVisitor() {
+
+                    override fun visitElement(element: GroovyPsiElement) {
+                        super.visitElement(element)
+                        visitAction(element)
+                    }
+                }
+            )
+        )
     }
 
     private fun convertCallMethods(currentLabel: String, expression: GrMethodCallExpression) {
@@ -565,9 +593,9 @@ class SpockToJunitConverter(
                         fieldClass,
                         (initializerGroovy as GrMethodCallExpressionImpl)
                     )
-                } else if (initializerGroovy is GrNewExpression) {
-                    (initializerGroovy as GrNewExpression).navigationElement.firstChild.delete()
-                }
+                } //else if (initializerGroovy is GrNewExpression) {
+                //(initializerGroovy as GrNewExpression).navigationElement.firstChild.delete()
+                // }
 
                 fieldClass.replace(valExpr)
             }
@@ -578,7 +606,7 @@ class SpockToJunitConverter(
                 convertMockStatement(null, (initializerGroovy as GrMethodCallExpressionImpl))
             }
 
-            (initializerGroovy as? GrNewExpression)?.navigationElement?.firstChild?.delete()
+            // (initializerGroovy as? GrNewExpression)?.navigationElement?.firstChild?.delete()
             variableDeclaration.modifierList.replaceDefWith("val")
         }
     }
@@ -606,25 +634,24 @@ class SpockToJunitConverter(
                 if (shiftExpr != null) {
 
                     if (shiftExpr.rightOperand is GrNewExpression) {
-                        (shiftExpr.rightOperand as GrNewExpression).navigationElement.firstChild.delete()
+                        //   (shiftExpr.rightOperand as GrNewExpression).navigationElement.firstChild.delete()
                     } else if (shiftExpr.rightOperand is GrListOrMapImpl) {
-                        if ((shiftExpr.rightOperand as GrListOrMapImpl).isEmpty) {
-                            (shiftExpr.rightOperand as GrListOrMapImpl).replace(groovyFactory.createStatementFromText("emptyList()"))
+                        val listOrMapElement = shiftExpr.rightOperand as GrListOrMapImpl
+                        if (listOrMapElement.isEmpty) {
+                            listOrMapElement.replace(groovyFactory.createStatementFromText("emptyList()"))
                         } else {
-                            (shiftExpr.rightOperand as GrListOrMapImpl).children.forEach { listExpression ->
-                                if (listExpression is GrNewExpression) {
-                                    (listExpression as? GrNewExpression)?.navigationElement?.firstChild?.delete()
-                                }
-                            }
+                            //(shiftExpr.rightOperand as GrListOrMapImpl).children.forEach { listExpression ->
+//                                if (listExpression is GrNewExpression) {
+//                                    (listExpression as? GrNewExpression)?.navigationElement?.firstChild?.delete()
+//                                }
+                            //}
                             val kotlinListStatement =
-                                (shiftExpr.rightOperand as GrListOrMapImpl).children.joinToString(",", "listOf(", ")") {
+                                listOrMapElement.children.joinToString(",", "listOf(", ")") {
                                     it.text
                                 }
 
-                            (shiftExpr.rightOperand as GrListOrMapImpl).replace(
-                                groovyFactory.createStatementFromText(
-                                    kotlinListStatement
-                                )
+                            listOrMapElement.replace(
+                                groovyFactory.createStatementFromText(kotlinListStatement)
                             )
                         }
                     }
@@ -690,9 +717,15 @@ class SpockToJunitConverter(
         return groovyFactory.createStatementFromText("label: labeled").firstChild.nextSibling
     }
 
+    private fun getStarElement(): PsiElement {
+        return groovyFactory.createStatementFromText("label* labeled").firstChild.nextSibling
+    }
+
     private fun createArgumentProvider(method: GrMethod) {
-        val whereStatementIndex = method.block?.statements?.indexOfFirst { it.text.contains("where") } ?: return
+        val methodStatements = method.block?.statements ?: return
+        val whereStatementIndex = methodStatements.indexOfFirst { it.text.contains("where") }
         if (whereStatementIndex < 0) return
+
         val paramsProviderClassName = method.name.split('_').joinToString("", postfix = "Provider") {
             it.capitalize()
         }
@@ -712,54 +745,89 @@ class SpockToJunitConverter(
         // добавить сгенерированный класс над методом с аннотацией Unroll
         val linebreak = groovyFactory.createLineTerminator(2)
         argumentProviderClass.addAfter(linebreak, argumentProviderClass.lastChild)
-        val addedArgumentProviderClass = method.addBefore(argumentProviderClass, method.modifierList) as GrTypeDefinition
+        val addedArgumentProviderClass =
+            method.addBefore(argumentProviderClass, method.modifierList) as GrTypeDefinition
 
         addedArgumentProviderClass.extendsClause?.firstChild?.replace(getColonElement())
-        replaceWithKotlinMethodReturnType(addedArgumentProviderClass.methods[0].parameterList.nextSibling, "Array<Array<Any>>")
+        replaceWithKotlinStarGenericMethodReturnType(
+            addedArgumentProviderClass.methods[0].parameterList.nextSibling,
+            "Array<Array<*>>"
+        )
         (addedArgumentProviderClass.methods[0].modifierList as? GrModifierList)?.replaceDefWith("fun")
 
         //перенести таблицу из блока where в сгенерированный класс
 
         val parametersSet = arrayListOf<String>()
         val methodArguments = arrayListOf<String>()
-        method.block?.statements?.forEachIndexed { index, grStatement ->
-            if (index >= whereStatementIndex) {
-                print("create 12212")
-                if (grStatement is GrLabeledStatement) {
-                    val kotlinParameters = grStatement.lastChild.text.replace(" ", "")
-                        .split('|')
-                    methodArguments.addAll(kotlinParameters)
-                } else {
-                    val kotlinWhereSet = grStatement.text.replace(" ", "")
-                        .split('|')
-                        .joinToString(", ", "arrayOf(", ")")
-                    parametersSet.add(kotlinWhereSet)
+
+        val whereStatement = (methodStatements[whereStatementIndex] as GrLabeledStatementImpl).statement
+        if (whereStatement is GrBitwiseExpressionImpl) {
+            methodStatements.forEachIndexed { index, grStatement ->
+                if (index >= whereStatementIndex) {
+                    print("create 12212")
+                    if (grStatement is GrLabeledStatement) {
+                        val kotlinParameters = grStatement.lastChild.text.replace(" ", "")
+                            .split('|')
+                        methodArguments.addAll(kotlinParameters)
+                    } else {
+                        val kotlinWhereSet = grStatement.text.replace(" ", "")
+                            .split('|')
+                            .joinToString(", ", "arrayOf(", ")")
+                        parametersSet.add(kotlinWhereSet)
+                    }
+                    grStatement.delete()
                 }
-                grStatement.delete()
             }
+
+        } else if (whereStatement is GrShiftExpressionImpl) {
+            val arguments = (whereStatement.leftOperand as GrListOrMapImpl).text.trim('[', ']').split(',')
+            methodArguments.addAll(arguments)
+
+            (whereStatement.rightOperand as GrListOrMapImpl).children.forEach {
+                val kotlinParameters = it.text.replace("""\n +|\[+|\]+""".toRegex(), "")
+                    .split(',')
+                    .joinToString(", ", "arrayOf(", ")")
+                parametersSet.add(kotlinParameters)
+            }
+            whereStatement.delete()
         }
 
         val parametersSetString = parametersSet.joinToString(",\n", "arrayOf(\n", "\n)")
         val parametersSetStatement = groovyFactory.createStatementFromText(parametersSetString)
-        (addedArgumentProviderClass.codeMethods[0].block?.statements?.get(0) as? GrReturnStatementImpl)?.returnValue?.replace(parametersSetStatement)
+
+        (addedArgumentProviderClass.codeMethods[0].block?.statements?.get(0) as? GrReturnStatementImpl)?.returnValue
+            ?.replace(parametersSetStatement)
 
         methodArguments.forEach {
             val parameter = groovyFactory.createParameter(it, "Any", null)
             method.parameterList.add(parameter)
         }
-       // convertMethodArguments(method) не нужно, дальше пойдет конвертация параметров для всех методов
-
+        // convertMethodArguments(method) не нужно, дальше пойдет конвертация параметров для всех методов
 
 
         print("create argument provider")
     }
 
-    private fun replaceWithKotlinMethodReturnType(element: PsiElement, returnType: String) {
+    private fun replaceWithKotlinStarGenericMethodReturnType(element: PsiElement, returnType: String) {
+        val returnTypeWithStarLabel = returnType.replace("*", "Star")
+        val starElement = getStarElement()
+        val replacedElement = replaceWithKotlinMethodReturnType(element, returnTypeWithStarLabel)
+        // replace Star with *
+
+        recursivelyVisitAllElements(replacedElement) {
+            if (it.text == "Star" && it is GrClassTypeElement) {
+                it.replace(starElement)
+            }
+        }
+    }
+
+    private fun replaceWithKotlinMethodReturnType(element: PsiElement, returnType: String): PsiElement {
         val colonElement = getColonElement()
         val assignmentStatement = groovyFactory.createStatementFromText("variableName= $returnType")
         val replacedElement = element.replace(assignmentStatement)
         // replace = with : and delete variableName
         replacedElement.firstChild.nextSibling.replace(colonElement)
         replacedElement.firstChild.delete()
+        return replacedElement
     }
 }
