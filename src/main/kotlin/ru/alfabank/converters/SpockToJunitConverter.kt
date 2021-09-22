@@ -6,6 +6,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.impl.source.tree.PsiCommentImpl
+import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.jetbrains.plugins.groovy.lang.psi.*
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierList
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrLabeledStatement
@@ -15,6 +16,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaratio
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrAssertStatement
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrReturnStatement
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrAssignmentExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExpression
@@ -64,8 +66,6 @@ class SpockToJunitConverter(
 
     private val groovyFile
         get() = typeDefinition.containingFile as GroovyFile
-
-    private val replaceQueue = mutableListOf<Pair<PsiElement, PsiElement>>()
 
     fun transformToJunit() {
         deleteAllNewKeyWord()
@@ -118,7 +118,7 @@ class SpockToJunitConverter(
         }, psiFile)
 
 //change method declaration
-        WriteCommandAction.runWriteCommandAction(project, null, null, Runnable {
+        WriteCommandAction.runWriteCommandAction(project, null, null, {
 
             for (method in typeDefinition.codeMethods) {
 
@@ -147,15 +147,31 @@ class SpockToJunitConverter(
                         // add test annotation
                         groovyFile.addImportStatement("org.junit.Test")
                         method.modifierList.addAnnotation("Test")
-
                     }
                 } else {
                     // not test methods
 
-                    if (method.name == "setup") {
-                        // add test lifecycle annotations
-                        groovyFile.addImportStatement("org.junit.Before")
-                        method.modifierList.addAnnotation("Before")
+                    when (method.name) {
+                        "setup" -> {
+                            // add test lifecycle annotations
+                            groovyFile.addImportStatement("org.junit.Before")
+                            method.modifierList.addAnnotation("Before")
+                        }
+                        "cleanupSpec" -> {
+                            // add test lifecycle annotations
+                            groovyFile.addImportStatement("org.junit.After")
+                            method.modifierList.addAnnotation("After")
+                        }
+                        else -> {
+                            // common method
+//                            if (method.hasReturnStatement()) {
+                                // как то достать тип из return statement
+//                                replaceWithKotlinMethodReturnType(
+//                                    method.parameterList.nextSibling,
+//                                    "Any"
+//                                )
+//                            }
+                        }
                     }
                 }
             }
@@ -163,7 +179,7 @@ class SpockToJunitConverter(
         }, psiFile)
 
         //change spock section labels with comment
-        WriteCommandAction.runWriteCommandAction(project, null, null, Runnable {
+        WriteCommandAction.runWriteCommandAction(project, null, null, {
 
             for (method in typeDefinition.codeMethods) {
                 var element = method.body?.firstBodyElement ?: continue
@@ -176,14 +192,14 @@ class SpockToJunitConverter(
                     }
                 }
             }
-
         }, psiFile)
 
 
         // изменяем внутрянку метода
-        WriteCommandAction.runWriteCommandAction(project, null, null, Runnable {
+        WriteCommandAction.runWriteCommandAction(project, null, null, {
 
             for (method in typeDefinition.codeMethods) {
+                val replaceQueue = mutableListOf<Pair<PsiElement, PsiElement>>()
                 convertMethodArguments(method)
 
                 if (!method.isTestMethod()) continue
@@ -198,62 +214,46 @@ class SpockToJunitConverter(
                 while (element.nextSibling != null) {
                     element = element.nextSibling
 
-//                     изменяем объявления переменных
-
-
                     // изменяем выражения в блоках given when then expect
-
-
                     element.let {
                         when (it) {
                             is GrLabeledStatement -> {
                                 if (it.firstChild.text != AND_LABEL) {
-                                    //меняем контекст, так как для given when и then нужно по разному конвертировать выражения
+                                    //меняем контекст, так как для given when и then нужно по разному конвертировать выражения,
+                                    // для and не нужно менять контекст!
                                     currentLabel = it.firstChild.text
                                 }
                                 (it.lastChild as? GrVariableDeclaration)?.variables?.first()
                                     ?.convertVariableDeclaration()
                                 (it.lastChild as? GrMethodCallExpression)?.let { callExpr ->
-                                    convertCallMethods(
-                                        currentLabel,
-                                        callExpr
-                                    )
+                                    convertCallMethods(currentLabel, callExpr, replaceQueue)
                                 }
                                 (it.lastChild as? GrRelationalExpressionImpl)?.let { callExpr ->
-                                    convertAssertTwoOperand(
-                                        currentLabel,
-                                        callExpr
-                                    )
+                                    convertAssertTwoOperand(currentLabel, callExpr, replaceQueue)
                                 }
                                 (it.lastChild as? GrMultiplicativeExpressionImpl)?.let { callExpr ->
-                                    convertAssertCallNumber(
-                                        currentLabel,
-                                        callExpr
-                                    )
+                                    convertAssertCallNumber(currentLabel, callExpr, replaceQueue)
                                 }
                                 (it.lastChild as? GrShiftExpressionImpl)?.let { callExpr ->
-                                    convertAssertCallNumberWithArguments(
-                                        currentLabel,
-                                        callExpr
-                                    )
-                                    convertMockCallMethod(currentLabel, callExpr)
+                                    convertAssertCallNumberWithArguments(currentLabel, callExpr, replaceQueue)
+                                    convertMockCallMethod(currentLabel, callExpr, replaceQueue)
                                 }
                             }
                             is GrVariableDeclaration -> {
                                 it.variables.first().convertVariableDeclaration()
                             }
                             is GrMethodCallExpression -> {
-                                convertCallMethods(currentLabel, it)
+                                convertCallMethods(currentLabel, it, replaceQueue)
                             }
                             is GrRelationalExpressionImpl -> {
-                                convertAssertTwoOperand(currentLabel, it)
+                                convertAssertTwoOperand(currentLabel, it, replaceQueue)
                             }
                             is GrMultiplicativeExpressionImpl -> {
-                                convertAssertCallNumber(currentLabel, it)
+                                convertAssertCallNumber(currentLabel, it, replaceQueue)
                             }
                             is GrShiftExpressionImpl -> {
-                                convertAssertCallNumberWithArguments(currentLabel, it)
-                                convertMockCallMethod(currentLabel, it)
+                                convertAssertCallNumberWithArguments(currentLabel, it, replaceQueue)
+                                convertMockCallMethod(currentLabel, it, replaceQueue)
                             }
                             else -> {
                                 print("изменяем внутрянку метода else блок для переменных")
@@ -261,15 +261,19 @@ class SpockToJunitConverter(
                         }
                     }
                 }
-            }
 
-            replaceQueue.forEach {
-                it.first.replace(it.second)
+                replaceQueue.forEach {
+                    it.first.replace(it.second)
+                }
+                replaceQueue.clear()
             }
-            replaceQueue.clear()
 
         }, psiFile)
     }
+
+//    private fun GrMethod.hasReturnStatement(): Boolean {
+//        return this.block?.statements?.lastOrNull() is GrReturnStatement
+//    }
 
     private fun deleteAllNewKeyWord() {
         WriteCommandAction.runWriteCommandAction(project, null, null, {
@@ -295,7 +299,11 @@ class SpockToJunitConverter(
         )
     }
 
-    private fun convertCallMethods(currentLabel: String, expression: GrMethodCallExpression) {
+    private fun convertCallMethods(
+        currentLabel: String,
+        expression: GrMethodCallExpression,
+        replaceQueue: MutableList<Pair<PsiElement, PsiElement>>
+    ) {
         when (currentLabel) {
             TEST_LIFECYCLE_METHOD, GIVEN -> {
                 val newArgumentsArray = expression.argumentList.allArguments.map {
@@ -308,7 +316,6 @@ class SpockToJunitConverter(
                     }
                 }.joinToString(",")
                 val argumentListStatement = groovyFactory.createArgumentListFromText("($newArgumentsArray)")
-                //expression.argumentList.replace(argumentListStatement)
                 replaceQueue.add(Pair(expression.argumentList, argumentListStatement))
                 print("изменяем в GIVEN тут не надо ничего в самом вызове менять, но аргументы стоит проверить на передачу мок выражения")
             }
@@ -317,7 +324,7 @@ class SpockToJunitConverter(
             }
             EXPECT, THEN -> {
                 print("изменяем в THEN")
-                val newKotlinExpression = groovyFactory.createStatementFromText("assertTrue(${expression.text})")
+                val newKotlinExpression = groovyFactory.createExpressionFromText("assertTrue(${expression.text})")
                 replaceQueue.add(Pair(expression, newKotlinExpression))
             }
             else -> {
@@ -326,39 +333,38 @@ class SpockToJunitConverter(
         }
     }
 
-    private fun convertAssertTwoOperand(currentLabel: String, expression: GrRelationalExpressionImpl) {
-        when (currentLabel) {
-            TEST_LIFECYCLE_METHOD, GIVEN -> {
-                print("изменяем в GIVEN")
-            }
-            WHEN -> {
-                print("изменяем в WHEN")
-            }
-            EXPECT, THEN -> {
-                print("изменяем в THEN")
-                val newKotlinExpression =
-                    groovyFactory.createExpressionFromText("assertEquals(${expression.leftOperand.text}, ${expression.rightOperand?.text})")
-                replaceQueue.add(Pair(expression, newKotlinExpression))
-            }
-            else -> {
-                print("изменяем внутрянку метода else блок для сравнения переменных")
-            }
+    private fun convertAssertTwoOperand(
+        currentLabel: String,
+        expression: GrRelationalExpressionImpl,
+        replaceQueue: MutableList<Pair<PsiElement, PsiElement>>
+    ) {
+        if (currentLabel == EXPECT || currentLabel == THEN) {
+            print("изменяем в THEN")
+            val newKotlinExpression =
+                groovyFactory.createExpressionFromText("assertEquals(${expression.leftOperand.text}, ${expression.rightOperand?.text})")
+            replaceQueue.add(Pair(expression, newKotlinExpression))
         }
     }
 
-    private fun convertAssertCallNumber(currentLabel: String, expression: GrMultiplicativeExpressionImpl) {
-        val methodCall = (expression.rightOperand as? GrMethodCall) ?: return
-
+    private fun convertAssertCallNumber(
+        currentLabel: String,
+        expression: GrMultiplicativeExpressionImpl,
+        replaceQueue: MutableList<Pair<PsiElement, PsiElement>>
+    ) {
         when (currentLabel) {
             TEST_LIFECYCLE_METHOD, GIVEN -> {
-                print("изменяем в GIVEN")
-            }
-            WHEN -> {
-                print("изменяем в WHEN")
+                // если вдруг есть проверка вызова в блоке given
+//                when (val methodCall = expression.rightOperand) {
+//                    is GrMethodCallExpression -> {
+//                        convertCallMethods(GIVEN, methodCall, replaceQueue)
+//                        expression.leftOperand.delete()
+//                    }
+//                    is GrShiftExpressionImpl -> { convertMockCallMethod(GIVEN, methodCall, replaceQueue) }
+//                }
             }
             EXPECT, THEN -> {
                 print("изменяем в THEN")
-
+                val methodCall = (expression.rightOperand as? GrMethodCallExpression) ?: return
                 val callsNumber = (expression.leftOperand as? GrLiteralImpl)?.value ?: return
                 val callsNumberVerifierString = callsNumberVerifierString(callsNumber)
 
@@ -375,7 +381,14 @@ class SpockToJunitConverter(
         }
     }
 
-    private fun convertAssertCallNumberWithArguments(currentLabel: String, expression: GrShiftExpressionImpl) {
+    private fun convertAssertCallNumberWithArguments(
+        currentLabel: String,
+        expression: GrShiftExpressionImpl,
+        replaceQueue: MutableList<Pair<PsiElement, PsiElement>>
+    ) {
+        // если попалось выражение 2 * object.methodCall() в блоке given или в setup(), то это ошибка и генерировать verify не нужно
+        if (currentLabel == TEST_LIFECYCLE_METHOD || currentLabel == GIVEN) return
+
         val methodCall =
             ((expression.leftOperand as? GrMultiplicativeExpressionImpl)?.rightOperand as? GrMethodCall) ?: return
         val methodArguments = (methodCall.children[1] as? GrArgumentListImpl)?.allArguments ?: return
@@ -400,7 +413,7 @@ class SpockToJunitConverter(
 
             val mockExpression =
                 groovyFactory.createStatementFromText("${methodCall.text} >> ${lastExpressionInLambda?.text}") as GrShiftExpressionImpl
-            val convertedMockExpression = convertMockCallMethod(GIVEN, mockExpression)
+            val convertedMockExpression = convertMockCallMethod(GIVEN, mockExpression, replaceQueue)
             convertedMockExpression?.let {
                 givenBlockFirstElement?.addAfter(it)
             }
@@ -415,12 +428,11 @@ class SpockToJunitConverter(
             if (isMixedArgumentsWithWildcard) {
 
                 val methodCallArgumentWithoutWildcards = methodCallArgumentStrings.map { argument ->
+                    // если аргумент это вайлдкард, то попробовать заменить его на переменную из assert в лямбде
                     if (argument == SINGLE_ARGUMENT_WILDCARD) {
-                        try {
+                        if (assertStatementsInLambda.isNotEmpty()) {
                             assertStatementsInLambda.removeAt(0)
-                        } catch (e: IndexOutOfBoundsException) {
-                            e.printStackTrace()
-                            print("the number of arguments is not equal to the number of checks")
+                        } else {
                             SINGLE_ARGUMENT_WILDCARD
                         }
                     } else {
@@ -445,91 +457,80 @@ class SpockToJunitConverter(
         replaceQueue.add(Pair(expression, newKotlinExpression))
     }
 
-    private fun convertMockCallMethod(currentLabel: String, expression: GrShiftExpressionImpl): GrStatement? {
+    private fun convertMockCallMethod(
+        currentLabel: String,
+        expression: GrShiftExpressionImpl,
+        replaceQueue: MutableList<Pair<PsiElement, PsiElement>>
+    ): GrStatement? {
         val methodCall = (expression.leftOperand as? GrMethodCall) ?: return null
         val methodArguments = (methodCall.children[1] as? GrArgumentListImpl)?.allArguments ?: return null
 
-        when (currentLabel) {
-            TEST_LIFECYCLE_METHOD, GIVEN -> {
-                print("изменяем в GIVEN")
-// нужно проверять и обрабатывать случаи когда в given есть проверка вызова!!!
-                val callObject = methodCall.children[0].children[0].text
-                val methodCallString = methodCall.children[0].lastChild.text
-                val methodCallArgumentStrings = methodArguments.map { it.text }
+        if (currentLabel == TEST_LIFECYCLE_METHOD || currentLabel == GIVEN) {
+            print("изменяем в GIVEN")
+            // нужно проверять и обрабатывать случаи когда в given есть проверка вызова!!!
+            val callObject = methodCall.children[0].children[0].text
+            val methodCallString = methodCall.children[0].lastChild.text
+            val methodCallArgumentStrings = methodArguments.map { it.text }
 
-                val assertStatementsInLambda = (expression.rightOperand as? GrClosableBlock)?.statements?.mapNotNull {
-                    // (it as? GrAssertStatement)?.assertion?.lastChild?.text
-                    if (it is GrMethodCallExpression) {
-                        print("если это вызов метода, то надо проверить и сконвертить его аргументы на предмет моков")
-                        val newArgumentsArray = (it as GrMethodCallExpressionImpl).argumentList.allArguments.map {
-                            val argumentMethodName =
-                                (it as? GrMethodCallExpressionImpl)?.navigationElement?.firstChild?.text
-                            if (argumentMethodName == "Mock") {
-                                val classArgument = it.argumentList.allArguments.getOrNull(0)?.text ?: "IgorekClassName"
-                                "mock<$classArgument>()"
-                            } else {
-                                it.text
-                            }
-                        }.joinToString(",")
-                        val argumentListStatement = groovyFactory.createArgumentListFromText("($newArgumentsArray)")
-                        it.argumentList.replace(argumentListStatement)
-                        it.text
-                        //convertCallMethods(currentLabel, methodCall)
-                    } else {
-                        it.text
-                    }
-                }?.toMutableList()
+            val assertStatementsInLambda = (expression.rightOperand as? GrClosableBlock)?.statements?.mapNotNull {
+                // (it as? GrAssertStatement)?.assertion?.lastChild?.text
+                if (it is GrMethodCallExpression) {
+                    print("если это вызов метода, то надо проверить и сконвертить его аргументы на предмет моков")
+                    val newArgumentsArray = (it as GrMethodCallExpressionImpl).argumentList.allArguments.map {
+                        val argumentMethodName =
+                            (it as? GrMethodCallExpressionImpl)?.navigationElement?.firstChild?.text
+                        if (argumentMethodName == "Mock") {
+                            val classArgument = it.argumentList.allArguments.getOrNull(0)?.text ?: "IgorekClassName"
+                            "mock<$classArgument>()"
+                        } else {
+                            it.text
+                        }
+                    }.joinToString(",")
+                    val argumentListStatement = groovyFactory.createArgumentListFromText("($newArgumentsArray)")
+                    it.argumentList.replace(argumentListStatement)
+                    it.text
+                } else {
+                    it.text
+                }
+            }?.toMutableList()
 
-                val kotlinLambdaParametersString =
-                    (expression.rightOperand as? GrClosableBlock)?.allParameters?.mapIndexed { index, grParameter ->
+            val kotlinLambdaParametersString =
+                (expression.rightOperand as? GrClosableBlock)?.allParameters?.mapIndexed { index, grParameter ->
 
-                        val parameterName = grParameter.name
-                        if (!parameterName.matches(ARGUMENT_WILDCARD_PATTERN)) {
-                            val parameterType = grParameter.declaredType?.canonicalText
-                            val parameterTypeString = if (parameterType != null) {
-                                "as $parameterType"
-                            } else {
-                                ""
-                            }
-                            "val $parameterName = it.arguments[$index] $parameterTypeString"
+                    val parameterName = grParameter.name
+                    if (!parameterName.matches(ARGUMENT_WILDCARD_PATTERN)) {
+                        val parameterType = grParameter.declaredType?.canonicalText
+                        val parameterTypeString = if (parameterType != null) {
+                            "as $parameterType"
                         } else {
                             ""
                         }
-
+                        "val $parameterName = it.arguments[$index] $parameterTypeString"
+                    } else {
+                        ""
                     }
-                        ?.filter { it.isNotEmpty() }
-                        ?: emptyList()
 
-                assertStatementsInLambda?.addAll(0, kotlinLambdaParametersString)
-                val convertLambdaStatements = assertStatementsInLambda?.joinToString("\n")
-
-                val argumentsString = wrapMethodArgumentsWithEquals(methodCallArgumentStrings)
-
-                val newKotlinExpression = if (expression.rightOperand is GrClosableBlock) {
-                    groovyFactory.createStatementFromText("whenever($callObject.$methodCallString($argumentsString)) doAnswer { \n$convertLambdaStatements \n}")
-                } else {
-                    groovyFactory.createStatementFromText("whenever($callObject.$methodCallString($argumentsString)).doReturn(${expression.rightOperand?.text})")
                 }
+                    ?.filter { it.isNotEmpty() }
+                    ?: emptyList()
 
-                replaceQueue.add(Pair(expression, newKotlinExpression))
-                return newKotlinExpression
+            assertStatementsInLambda?.addAll(0, kotlinLambdaParametersString)
+            val convertLambdaStatements = assertStatementsInLambda?.joinToString("\n")
 
+            val argumentsString = wrapMethodArgumentsWithEquals(methodCallArgumentStrings)
+
+            val newKotlinExpression = if (expression.rightOperand is GrClosableBlock) {
+                groovyFactory.createStatementFromText("whenever($callObject.$methodCallString($argumentsString)) doAnswer { \n$convertLambdaStatements \n}")
+            } else {
+                groovyFactory.createStatementFromText("whenever($callObject.$methodCallString($argumentsString)).doReturn(${expression.rightOperand?.text})")
             }
-            WHEN -> {
-                print("изменяем в WHEN")
-                return null
-            }
-            THEN -> {
-                return null
-            }
-            EXPECT -> {
-                print("изменяем в EXPECT")
-                return null
-            }
-            else -> {
-                print("изменяем внутрянку метода else блок для сравнения переменных")
-                return null
-            }
+
+            replaceQueue.add(Pair(expression, newKotlinExpression))
+            return newKotlinExpression
+
+        } else {
+            print("изменяем внутрянку метода else блок для сравнения переменных")
+            return null
         }
     }
 
@@ -580,22 +581,17 @@ class SpockToJunitConverter(
                 fieldClass.replace(valExpr)
                 this.replace(statement1)
             } else {
-//ShareUtils shareUtils = Mock()
+                //ShareUtils shareUtils = Mock()
                 //тут проверить initializer это мок??
                 if (initializerGroovy?.text == "null") {
-                    //val statement1 = factory.createStatementFromText("$name: ${fieldClass.text}")
-
                     fieldClass.replace(valExpr)
                     replaceWithKotlinTypeDeclaration(this, name, fieldClass.text)
-                    //this.replace(statement1)
                 } else if (isMock()) {
                     convertMockStatement(
                         fieldClass,
                         (initializerGroovy as GrMethodCallExpressionImpl)
                     )
-                } //else if (initializerGroovy is GrNewExpression) {
-                //(initializerGroovy as GrNewExpression).navigationElement.firstChild.delete()
-                // }
+                }
 
                 fieldClass.replace(valExpr)
             }
@@ -606,7 +602,6 @@ class SpockToJunitConverter(
                 convertMockStatement(null, (initializerGroovy as GrMethodCallExpressionImpl))
             }
 
-            // (initializerGroovy as? GrNewExpression)?.navigationElement?.firstChild?.delete()
             variableDeclaration.modifierList.replaceDefWith("val")
         }
     }
@@ -633,18 +628,11 @@ class SpockToJunitConverter(
                 val shiftExpr = it as? GrShiftExpressionImpl
                 if (shiftExpr != null) {
 
-                    if (shiftExpr.rightOperand is GrNewExpression) {
-                        //   (shiftExpr.rightOperand as GrNewExpression).navigationElement.firstChild.delete()
-                    } else if (shiftExpr.rightOperand is GrListOrMapImpl) {
+                    if (shiftExpr.rightOperand is GrListOrMapImpl) {
                         val listOrMapElement = shiftExpr.rightOperand as GrListOrMapImpl
                         if (listOrMapElement.isEmpty) {
                             listOrMapElement.replace(groovyFactory.createStatementFromText("emptyList()"))
                         } else {
-                            //(shiftExpr.rightOperand as GrListOrMapImpl).children.forEach { listExpression ->
-//                                if (listExpression is GrNewExpression) {
-//                                    (listExpression as? GrNewExpression)?.navigationElement?.firstChild?.delete()
-//                                }
-                            //}
                             val kotlinListStatement =
                                 listOrMapElement.children.joinToString(",", "listOf(", ")") {
                                     it.text

@@ -4,6 +4,7 @@ import com.google.gson.JsonPrimitive
 import kotlin.Unit
 import kotlin.jvm.JvmField
 import kotlin.jvm.functions.Function1
+import org.junit.After
 import org.junit.Before
 import org.junit.ClassRule
 import org.junit.Rule
@@ -45,6 +46,10 @@ class Mediator {
         on { getString(eq(R.string.card_common_action_section_info), any(), any()) } doReturn "Информация"
     }
 
+    fun createOperationTime() {
+        return CalendarTestUtils.getCalendar(2003, Calendar.FEBRUARY, 25, 10, 15, 0)
+    }
+
     @Test
     fun should_open_AboutActivity() {
         // given
@@ -66,6 +71,8 @@ class Mediator {
             observer.onSubscribe(mock<Disposable>())
             observer.onSuccess(expectedResponse)
         }
+        //1 * prese34nter.onShare(77)
+        //2 * prese678nter.onShare1() >> 56
         val resultConsumer: Function1<OperationConfirmationResultModel, Unit>
         val expectedAction = null
         whenever(router.registerOperationConfirmationResult(any(), eq(23))) doAnswer {
@@ -109,6 +116,11 @@ class Mediator {
     fun setup() {
         whenever(feature1.load()).doReturn(null)
         presenterRule.nextActivity(AboutActivity)
+    }
+
+    @After
+    fun cleanupSpec() {
+        RxJavaPlugins.reset()
     }
 
     class ShouldDeserializeStringProvider : ArgumentsProvider {

@@ -41,6 +41,10 @@ class Mediator extends ElectricSpecification {
         getString(R.string.card_common_action_section_info, _, _) >> "Информация"
     }
 
+    def createOperationTime() {
+        return CalendarTestUtils.getCalendar(2003, Calendar.FEBRUARY, 25, 10, 15, 0)
+    }
+
     def 'should open AboutActivity'() {
         given:
         def versionName = "10.3.2.1"
@@ -53,7 +57,8 @@ class Mediator extends ElectricSpecification {
             observer.onSubscribe(Mock(Disposable))
             observer.onSuccess(expectedResponse)
         }
-        1 * prese34nter.onShare()
+        1 * prese34nter.onShare(77)
+        2 * prese678nter.onShare1() >> 56
         Function1<OperationConfirmationResultModel, Unit> resultConsumer = null
         def expectedAction = null
         router.registerOperationConfirmationResult(_, 23) >> { Function1<OperationConfirmationResultModel, Unit> actualConsumer ->
@@ -113,6 +118,10 @@ class Mediator extends ElectricSpecification {
     def setup() {
         feature1.load() >> null
         presenterRule.nextActivity(AboutActivity)
+    }
+
+    def cleanupSpec() {
+        RxJavaPlugins.reset()
     }
 
     @Unroll
