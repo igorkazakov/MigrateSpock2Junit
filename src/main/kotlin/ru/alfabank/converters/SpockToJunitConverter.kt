@@ -6,7 +6,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.impl.source.tree.PsiCommentImpl
-import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.jetbrains.plugins.groovy.lang.psi.*
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierList
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrLabeledStatement
@@ -16,7 +15,6 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaratio
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrAssertStatement
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrReturnStatement
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrAssignmentExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExpression
@@ -306,15 +304,9 @@ class SpockToJunitConverter(
     ) {
         when (currentLabel) {
             TEST_LIFECYCLE_METHOD, GIVEN -> {
-                val newArgumentsArray = expression.argumentList.allArguments.map {
-                    val argumentMethodName = (it as? GrMethodCallExpressionImpl)?.navigationElement?.firstChild?.text
-                    if (argumentMethodName == "Mock") {
-                        val classArgument = it.argumentList.allArguments.getOrNull(0)?.text ?: "IgorekClassName"
-                        "mock<$classArgument>()"
-                    } else {
-                        it.text
-                    }
-                }.joinToString(",")
+                val newArgumentsArray = expression.argumentList.allArguments.joinToString(",") {
+                    convertMockMethodArgument(it)
+                }
                 val argumentListStatement = groovyFactory.createArgumentListFromText("($newArgumentsArray)")
                 replaceQueue.add(Pair(expression.argumentList, argumentListStatement))
                 print("изменяем в GIVEN тут не надо ничего в самом вызове менять, но аргументы стоит проверить на передачу мок выражения")
@@ -330,6 +322,16 @@ class SpockToJunitConverter(
             else -> {
                 print("изменяем внутрянку метода else блок для методов")
             }
+        }
+    }
+
+    private fun convertMockMethodArgument(element: GroovyPsiElement): String {
+        val argumentMethodName = (element as? GrMethodCallExpressionImpl)?.navigationElement?.firstChild?.text
+        return if (argumentMethodName == "Mock") {
+            val classArgument = element.argumentList.allArguments.getOrNull(0)?.text ?: "UnknownClassName"
+            "mock<$classArgument>()"
+        } else {
+            element.text
         }
     }
 
@@ -441,10 +443,7 @@ class SpockToJunitConverter(
                 }
                 wrapMethodArgumentsWithEquals(methodCallArgumentWithoutWildcards)
             } else {
-                assertStatementsInLambda.joinToString(
-                    separator = ",",
-                    transform = { "eq($it)" }
-                )
+                assertStatementsInLambda.joinToString(separator = ",") { "eq($it)" }
             }
 
         } else {
@@ -476,16 +475,10 @@ class SpockToJunitConverter(
                 // (it as? GrAssertStatement)?.assertion?.lastChild?.text
                 if (it is GrMethodCallExpression) {
                     print("если это вызов метода, то надо проверить и сконвертить его аргументы на предмет моков")
-                    val newArgumentsArray = (it as GrMethodCallExpressionImpl).argumentList.allArguments.map {
-                        val argumentMethodName =
-                            (it as? GrMethodCallExpressionImpl)?.navigationElement?.firstChild?.text
-                        if (argumentMethodName == "Mock") {
-                            val classArgument = it.argumentList.allArguments.getOrNull(0)?.text ?: "IgorekClassName"
-                            "mock<$classArgument>()"
-                        } else {
-                            it.text
+                    val newArgumentsArray =
+                        (it as GrMethodCallExpressionImpl).argumentList.allArguments.joinToString(",") {
+                            convertMockMethodArgument(it)
                         }
-                    }.joinToString(",")
                     val argumentListStatement = groovyFactory.createArgumentListFromText("($newArgumentsArray)")
                     it.argumentList.replace(argumentListStatement)
                     it.text
@@ -543,30 +536,27 @@ class SpockToJunitConverter(
     }
 
     private fun wrapMethodArgumentsWithEquals(arguments: List<String>): String {
-        return arguments.joinToString(
-            separator = ",",
-            transform = {
-                if (it == SINGLE_ARGUMENT_WILDCARD || it == MULTIPLE_ARGUMENTS_WILDCARD) {
-                    "any()"
-                } else {
-                    "eq($it)"
-                }
+        return arguments.joinToString(separator = ",") {
+            if (it == SINGLE_ARGUMENT_WILDCARD || it == MULTIPLE_ARGUMENTS_WILDCARD) {
+                "any()"
+            } else {
+                "eq($it)"
             }
-        )
+        }
     }
 
-    private fun replaceWildcardMethodArguments(arguments: List<String>): String {
-        return arguments.joinToString(
-            separator = ",",
-            transform = {
-                if (it == SINGLE_ARGUMENT_WILDCARD || it == MULTIPLE_ARGUMENTS_WILDCARD) {
-                    "any()"
-                } else {
-                    it
-                }
-            }
-        )
-    }
+//    private fun replaceWildcardMethodArguments(arguments: List<String>): String {
+//        return arguments.joinToString(
+//            separator = ",",
+//            transform = {
+//                if (it == SINGLE_ARGUMENT_WILDCARD || it == MULTIPLE_ARGUMENTS_WILDCARD) {
+//                    "any()"
+//                } else {
+//                    it
+//                }
+//            }
+//        )
+//    }
 
     fun GrVariable.convertVariableDeclaration() {
         val variableDeclaration = (parent as GrVariableDeclaration)
@@ -619,7 +609,6 @@ class SpockToJunitConverter(
             print("def prop = Mock(ClassName)")
             groovyFactory.createExpressionFromText("mock<$classArgument>()")
         }
-
 
         val mockLambda = methodCallExpression.closureArguments.getOrNull(0) as? GrClosableBlockImpl
         if (mockLambda != null) {
@@ -746,17 +735,16 @@ class SpockToJunitConverter(
         //перенести таблицу из блока where в сгенерированный класс
 
         val parametersSet = arrayListOf<String>()
-        val methodArguments = arrayListOf<String>()
+        val testMethodArguments = arrayListOf<String>()
 
         val whereStatement = (methodStatements[whereStatementIndex] as GrLabeledStatementImpl).statement
         if (whereStatement is GrBitwiseExpressionImpl) {
             methodStatements.forEachIndexed { index, grStatement ->
                 if (index >= whereStatementIndex) {
-                    print("create 12212")
                     if (grStatement is GrLabeledStatement) {
                         val kotlinParameters = grStatement.lastChild.text.replace(" ", "")
                             .split('|')
-                        methodArguments.addAll(kotlinParameters)
+                        testMethodArguments.addAll(kotlinParameters)
                     } else {
                         val kotlinWhereSet = grStatement.text.replace(" ", "")
                             .split('|')
@@ -769,7 +757,7 @@ class SpockToJunitConverter(
 
         } else if (whereStatement is GrShiftExpressionImpl) {
             val arguments = (whereStatement.leftOperand as GrListOrMapImpl).text.trim('[', ']').split(',')
-            methodArguments.addAll(arguments)
+            testMethodArguments.addAll(arguments)
 
             (whereStatement.rightOperand as GrListOrMapImpl).children.forEach {
                 val kotlinParameters = it.text.replace("""\n +|\[+|\]+""".toRegex(), "")
@@ -786,13 +774,11 @@ class SpockToJunitConverter(
         (addedArgumentProviderClass.codeMethods[0].block?.statements?.get(0) as? GrReturnStatementImpl)?.returnValue
             ?.replace(parametersSetStatement)
 
-        methodArguments.forEach {
+        testMethodArguments.forEach {
             val parameter = groovyFactory.createParameter(it, "Any", null)
             method.parameterList.add(parameter)
         }
         // convertMethodArguments(method) не нужно, дальше пойдет конвертация параметров для всех методов
-
-
         print("create argument provider")
     }
 
