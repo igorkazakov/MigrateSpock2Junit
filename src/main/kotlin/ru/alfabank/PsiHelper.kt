@@ -9,6 +9,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierL
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaration
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrArgumentList
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrReturnStatement
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExpression
@@ -66,7 +67,9 @@ fun GrMethod.deleteSingleQuotesFromMethodName() {
 fun GrModifierList.replaceDefWith(modifier: String) {
     val funModifier = GroovyPsiElementFactory.getInstance(project).createModifierFromText(modifier)
     val defModifier = this.modifiers.firstOrNull { it.text == "def" }
-    defModifier?.replace(funModifier)
+    //defModifier?.replace(funModifier)
+    add(funModifier)
+    defModifier?.delete()
 }
 
 fun PsiFile.getPsiClass(): PsiClass? {
@@ -121,4 +124,8 @@ fun PsiElement.createCommentElement(text: String): PsiElement {
                                     expression // $text
                                 """)
     return methodBody.childrenOfType<PsiComment>()[0]
+}
+
+fun GrMethod.getReturnStatement(): GrReturnStatement? {
+    return this.block?.statements?.lastOrNull() as? GrReturnStatement
 }

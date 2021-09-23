@@ -45,6 +45,14 @@ class Mediator extends ElectricSpecification {
         return CalendarTestUtils.getCalendar(2003, Calendar.FEBRUARY, 25, 10, 15, 0)
     }
 
+    def sunction() {
+        return ExceptionTest().getException(2003)
+    }
+
+    def sunctionInt() {
+        return 34
+    }
+
     def 'should open AboutActivity'() {
         given:
         def versionName = "10.3.2.1"

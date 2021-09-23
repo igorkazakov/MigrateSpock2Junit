@@ -15,6 +15,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaratio
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrAssertStatement
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrReturnStatement
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrAssignmentExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExpression
@@ -35,6 +36,7 @@ import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.literal
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.path.GrMethodCallExpressionImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.relational.GrRelationalExpressionImpl
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.typedef.GrExtendsClauseImpl
+import org.jetbrains.plugins.groovy.lang.resolve.processors.inference.type
 import ru.alfabank.*
 
 private const val WHEN = "// when"
@@ -67,7 +69,7 @@ class SpockToJunitConverter(
 
     fun transformToJunit() {
         deleteAllNewKeyWord()
-// add runwith annotation and delete extends
+        // add runwith annotation and delete extends
         WriteCommandAction.runWriteCommandAction(project, null, null, Runnable {
 
             val parentClass = (typeDefinition.extendsClause as GrExtendsClauseImpl).lastChild.text
@@ -107,15 +109,13 @@ class SpockToJunitConverter(
                     annotation.replace(newAnnotation)
                 }
 
-
                 //change fields syntax
-
-                field.convertVariableDeclaration()
+                convertVariableDeclaration(field)
             }
 
         }, psiFile)
 
-//change method declaration
+        //change method declaration
         WriteCommandAction.runWriteCommandAction(project, null, null, {
 
             for (method in typeDefinition.codeMethods) {
@@ -159,16 +159,6 @@ class SpockToJunitConverter(
                             // add test lifecycle annotations
                             groovyFile.addImportStatement("org.junit.After")
                             method.modifierList.addAnnotation("After")
-                        }
-                        else -> {
-                            // common method
-//                            if (method.hasReturnStatement()) {
-                                // как то достать тип из return statement
-//                                replaceWithKotlinMethodReturnType(
-//                                    method.parameterList.nextSibling,
-//                                    "Any"
-//                                )
-//                            }
                         }
                     }
                 }
@@ -221,8 +211,10 @@ class SpockToJunitConverter(
                                     // для and не нужно менять контекст!
                                     currentLabel = it.firstChild.text
                                 }
-                                (it.lastChild as? GrVariableDeclaration)?.variables?.first()
-                                    ?.convertVariableDeclaration()
+                                (it.lastChild as? GrVariableDeclaration)?.variables?.first()?.let { variable ->
+                                    convertVariableDeclaration(variable)
+                                }
+
                                 (it.lastChild as? GrMethodCallExpression)?.let { callExpr ->
                                     convertCallMethods(currentLabel, callExpr, replaceQueue)
                                 }
@@ -238,7 +230,7 @@ class SpockToJunitConverter(
                                 }
                             }
                             is GrVariableDeclaration -> {
-                                it.variables.first().convertVariableDeclaration()
+                                convertVariableDeclaration(it.variables.first())
                             }
                             is GrMethodCallExpression -> {
                                 convertCallMethods(currentLabel, it, replaceQueue)
@@ -267,11 +259,25 @@ class SpockToJunitConverter(
             }
 
         }, psiFile)
+
+        addMethodsReturnType()
     }
 
-//    private fun GrMethod.hasReturnStatement(): Boolean {
-//        return this.block?.statements?.lastOrNull() is GrReturnStatement
-//    }
+    private fun addMethodsReturnType() {
+        WriteCommandAction.runWriteCommandAction(project, null, null, {
+            for (method in typeDefinition.codeMethods) {
+
+                val returnStatement = method.getReturnStatement()
+                if (returnStatement != null) {
+                    // как то достать тип из return statement
+                    val throwElement = groovyFactory.createThrownList(arrayOf(psiFile.getPsiClass()?.type()))
+                    val replacedElement = method.throwsList.replace(throwElement)
+                    val returnType = returnStatement.returnValue?.type?.presentableText ?: "Any"
+                    replaceWithKotlinMethodReturnType(replacedElement, returnType)
+                }
+            }
+        }, psiFile)
+    }
 
     private fun deleteAllNewKeyWord() {
         WriteCommandAction.runWriteCommandAction(project, null, null, {
@@ -558,28 +564,28 @@ class SpockToJunitConverter(
 //        )
 //    }
 
-    fun GrVariable.convertVariableDeclaration() {
-        val variableDeclaration = (parent as GrVariableDeclaration)
+    private fun convertVariableDeclaration(variable: GrVariable) {
+        val variableDeclaration = (variable.parent as GrVariableDeclaration)
         val factory = GroovyPsiElementFactory.getInstance(project)
 
         val valExpr = factory.createExpressionFromText("val")
-        val fieldClass = variableDeclaration.getTypeElementGroovyForVariable(this)
+        val fieldClass = variableDeclaration.getTypeElementGroovyForVariable(variable)
         if (fieldClass != null) {
 
-            if (initializerGroovy == null) {//PresenterRoboRule presenterRule
-                val statement1 = factory.createExpressionFromText("$name = ${fieldClass.text}()")
+            if (variable.initializerGroovy == null) {//PresenterRoboRule presenterRule
+                val statement1 = factory.createExpressionFromText("${variable.name} = ${fieldClass.text}()")
                 fieldClass.replace(valExpr)
-                this.replace(statement1)
+                variable.replace(statement1)
             } else {
                 //ShareUtils shareUtils = Mock()
                 //тут проверить initializer это мок??
-                if (initializerGroovy?.text == "null") {
+                if (variable.initializerGroovy?.text == "null") {
                     fieldClass.replace(valExpr)
-                    replaceWithKotlinTypeDeclaration(this, name, fieldClass.text)
-                } else if (isMock()) {
+                    replaceWithKotlinTypeDeclaration(variable, variable.name, fieldClass.text)
+                } else if (variable.isMock()) {
                     convertMockStatement(
                         fieldClass,
-                        (initializerGroovy as GrMethodCallExpressionImpl)
+                        (variable.initializerGroovy as GrMethodCallExpressionImpl)
                     )
                 }
 
@@ -588,8 +594,8 @@ class SpockToJunitConverter(
 
         } else {
             //тут проверить initializer это мок?? def eer = new PresenterRoboRule()
-            if (isMock()) {
-                convertMockStatement(null, (initializerGroovy as GrMethodCallExpressionImpl))
+            if (variable.isMock()) {
+                convertMockStatement(null, (variable.initializerGroovy as GrMethodCallExpressionImpl))
             }
 
             variableDeclaration.modifierList.replaceDefWith("val")
