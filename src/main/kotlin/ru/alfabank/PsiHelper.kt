@@ -4,26 +4,18 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.*
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory
-import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifier
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierList
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaration
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrArgumentList
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrReturnStatement
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod
-import org.jetbrains.plugins.groovy.lang.psi.impl.statements.GrFieldImpl
-import org.jetbrains.plugins.groovy.lang.psi.impl.synthetic.GrSyntheticExpression
+import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.path.GrMethodCallExpressionImpl
 import org.jetbrains.plugins.groovy.lang.psi.util.childrenOfType
+import ru.alfabank.converters.EXPECT
+import ru.alfabank.converters.GIVEN
+import ru.alfabank.converters.WHEN
 
-private val LOG = Logger.getInstance("junitspock.PsiHelper")
-
-fun PsiElement.replaceElement(replacement: PsiElement) {
-    this.parent.addAfter(replacement, this)
-    this.delete()
-}
+private val LOG = Logger.getInstance("PsiHelper")
 
 fun PsiElement.addAfter(element: PsiElement): PsiElement {
     return this.parent.addAfter(element, this)
@@ -83,4 +75,27 @@ fun PsiElement.createCommentElement(text: String): PsiElement {
 
 fun GrMethod.getReturnStatement(): GrReturnStatement? {
     return this.block?.statements?.lastOrNull() as? GrReturnStatement
+}
+
+fun GrVariable.isMock(): Boolean {
+    val methodName = (initializerGroovy as? GrMethodCallExpressionImpl)?.navigationElement?.firstChild?.text
+    return methodName == "Mock"
+}
+
+fun GrMethod.isTestMethod(): Boolean {
+    val containsTestAnnotation =
+        this.modifierList.modifiers.any { it.text == "@Test" || it.text == "@Before" || it.text == "@After" }
+    val methodBlock = this.block as GrOpenBlock
+    return methodBlock.text.contains(GIVEN) ||
+            methodBlock.text.contains(WHEN) ||
+            methodBlock.text.contains(EXPECT) ||
+            containsTestAnnotation
+}
+
+fun GroovyPsiElementFactory.createColonElement(): PsiElement {
+    return createStatementFromText("label: labeled").firstChild.nextSibling
+}
+
+fun GroovyPsiElementFactory.createStarElement(): PsiElement {
+    return createStatementFromText("label* labeled").firstChild.nextSibling
 }

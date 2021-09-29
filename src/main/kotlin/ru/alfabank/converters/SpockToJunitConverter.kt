@@ -15,7 +15,6 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaratio
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrAssertStatement
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrReturnStatement
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrAssignmentExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExpression
@@ -40,12 +39,12 @@ import org.jetbrains.plugins.groovy.lang.psi.impl.statements.typedef.GrExtendsCl
 import org.jetbrains.plugins.groovy.lang.resolve.processors.inference.type
 import ru.alfabank.*
 
-private const val WHEN = "// when"
-private const val GIVEN = "// given"
-private const val THEN = "// then"
-private const val EXPECT = "// expect"
-private const val AND_LABEL = "// and"
-private const val TEST_LIFECYCLE_METHOD = "// test lifecycle"
+const val WHEN = "// when"
+const val GIVEN = "// given"
+const val THEN = "// then"
+const val EXPECT = "// expect"
+const val AND_LABEL = "// and"
+const val TEST_LIFECYCLE_METHOD = "// test lifecycle"
 
 private const val SINGLE_ARGUMENT_WILDCARD = "_"
 private const val MULTIPLE_ARGUMENTS_WILDCARD = "*_"
@@ -81,14 +80,14 @@ class SpockToJunitConverter(
 
             convertSpockTestLabels()
 
-            convertMethodsStatements()
+            convertMethodsBody()
 
             addMethodsReturnType()
 
         }, psiFile)
     }
 
-    private fun convertMethodsStatements() {
+    private fun convertMethodsBody() {
         // изменяем внутрянку метода
         for (method in typeDefinition.codeMethods) {
             val replaceQueue = mutableListOf<Pair<PsiElement, PsiElement>>()
@@ -573,19 +572,6 @@ class SpockToJunitConverter(
         }
     }
 
-//    private fun replaceWildcardMethodArguments(arguments: List<String>): String {
-//        return arguments.joinToString(
-//            separator = ",",
-//            transform = {
-//                if (it == SINGLE_ARGUMENT_WILDCARD || it == MULTIPLE_ARGUMENTS_WILDCARD) {
-//                    "any()"
-//                } else {
-//                    it
-//                }
-//            }
-//        )
-//    }
-
     private fun convertVariableDeclaration(variable: GrVariable) {
         val variableDeclaration = (variable.parent as GrVariableDeclaration)
         val factory = GroovyPsiElementFactory.getInstance(project)
@@ -686,21 +672,6 @@ class SpockToJunitConverter(
 
     }
 
-    private fun GrVariable.isMock(): Boolean {
-        val methodName = (initializerGroovy as? GrMethodCallExpressionImpl)?.navigationElement?.firstChild?.text
-        return methodName == "Mock"
-    }
-
-    private fun GrMethod.isTestMethod(): Boolean {
-        val containsTestAnnotation =
-            this.modifierList.modifiers.any { it.text == "@Test" || it.text == "@Before" || it.text == "@After" }
-        val methodBlock = this.block as GrOpenBlock
-        return methodBlock.text.contains(GIVEN) ||
-                methodBlock.text.contains(WHEN) ||
-                methodBlock.text.contains(EXPECT) ||
-                containsTestAnnotation
-    }
-
     private fun convertMethodArguments(method: GrMethod) {
         method.parameterList.parameters.forEach {
             if (!it.text.contains(':')) {
@@ -711,19 +682,11 @@ class SpockToJunitConverter(
 
     private fun replaceWithKotlinTypeDeclaration(element: PsiElement, variableName: String, variableType: String) {
         val type = variableType.ifEmpty { "Any" }
-        val colonElement = getColonElement()
+        val colonElement = groovyFactory.createColonElement()
         val assignmentStatement = groovyFactory.createStatementFromText("$variableName= $type")
         val replacedElement = element.replace(assignmentStatement)
         // replace = with :
         replacedElement.firstChild.nextSibling.replace(colonElement)
-    }
-
-    private fun getColonElement(): PsiElement {
-        return groovyFactory.createStatementFromText("label: labeled").firstChild.nextSibling
-    }
-
-    private fun getStarElement(): PsiElement {
-        return groovyFactory.createStatementFromText("label* labeled").firstChild.nextSibling
     }
 
     private fun createArgumentProvider(method: GrMethod) {
@@ -753,7 +716,7 @@ class SpockToJunitConverter(
         val addedArgumentProviderClass =
             method.addBefore(argumentProviderClass, method.modifierList) as GrTypeDefinition
 
-        addedArgumentProviderClass.extendsClause?.firstChild?.replace(getColonElement())
+        addedArgumentProviderClass.extendsClause?.firstChild?.replace(groovyFactory.createColonElement())
         replaceWithKotlinStarGenericMethodReturnType(
             addedArgumentProviderClass.methods[0].parameterList.nextSibling,
             "Array<Array<*>>"
@@ -806,13 +769,11 @@ class SpockToJunitConverter(
             val parameter = groovyFactory.createParameter(it, "Any", null)
             method.parameterList.add(parameter)
         }
-        // convertMethodArguments(method) не нужно, дальше пойдет конвертация параметров для всех методов
-        print("create argument provider")
     }
 
     private fun replaceWithKotlinStarGenericMethodReturnType(element: PsiElement, returnType: String) {
         val returnTypeWithStarLabel = returnType.replace("*", "Star")
-        val starElement = getStarElement()
+        val starElement = groovyFactory.createStarElement()
         val replacedElement = replaceWithKotlinMethodReturnType(element, returnTypeWithStarLabel)
         // replace Star with *
 
@@ -824,7 +785,7 @@ class SpockToJunitConverter(
     }
 
     private fun replaceWithKotlinMethodReturnType(element: PsiElement, returnType: String): PsiElement {
-        val colonElement = getColonElement()
+        val colonElement = groovyFactory.createColonElement()
         val assignmentStatement = groovyFactory.createStatementFromText("variableName= $returnType")
         val replacedElement = element.replace(assignmentStatement)
         // replace = with : and delete variableName
