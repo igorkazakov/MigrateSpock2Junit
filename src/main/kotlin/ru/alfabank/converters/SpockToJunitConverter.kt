@@ -19,6 +19,7 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrReturnState
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrAssignmentExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExpression
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrMethodCallExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod
@@ -70,7 +71,7 @@ class SpockToJunitConverter(
     fun transformToJunit() {
         deleteAllNewKeyWord()
         // add runwith annotation and delete extends
-        WriteCommandAction.runWriteCommandAction(project, null, null, Runnable {
+        WriteCommandAction.runWriteCommandAction(project, null, null, {
 
             val parentClass = (typeDefinition.extendsClause as GrExtendsClauseImpl).lastChild.text
 
@@ -227,6 +228,7 @@ class SpockToJunitConverter(
                                 (it.lastChild as? GrShiftExpressionImpl)?.let { callExpr ->
                                     convertAssertCallNumberWithArguments(currentLabel, callExpr, replaceQueue)
                                     convertMockCallMethod(currentLabel, callExpr, replaceQueue)
+                                    convertMockGetter(currentLabel, callExpr, replaceQueue)
                                 }
                             }
                             is GrVariableDeclaration -> {
@@ -244,6 +246,7 @@ class SpockToJunitConverter(
                             is GrShiftExpressionImpl -> {
                                 convertAssertCallNumberWithArguments(currentLabel, it, replaceQueue)
                                 convertMockCallMethod(currentLabel, it, replaceQueue)
+                                convertMockGetter(currentLabel, it, replaceQueue)
                             }
                             else -> {
                                 print("изменяем внутрянку метода else блок для переменных")
@@ -418,14 +421,12 @@ class SpockToJunitConverter(
             lastExpressionInLambda !is GrRelationalExpressionImpl &&
             lastExpressionInLambda !is GrAssignmentExpression
         ) {
-
             val mockExpression =
                 groovyFactory.createStatementFromText("${methodCall.text} >> ${lastExpressionInLambda?.text}") as GrShiftExpressionImpl
             val convertedMockExpression = convertMockCallMethod(GIVEN, mockExpression, replaceQueue)
             convertedMockExpression?.let {
                 givenBlockFirstElement?.addAfter(it)
             }
-
         }
         val assertStatementsInLambda = (expression.rightOperand as? GrClosableBlock)?.statements?.mapNotNull {
             (it as? GrAssertStatement)?.assertion?.lastChild?.text
@@ -451,7 +452,6 @@ class SpockToJunitConverter(
             } else {
                 assertStatementsInLambda.joinToString(separator = ",") { "eq($it)" }
             }
-
         } else {
             wrapMethodArgumentsWithEquals(methodCallArgumentStrings)
         }
@@ -530,6 +530,27 @@ class SpockToJunitConverter(
         } else {
             print("изменяем внутрянку метода else блок для сравнения переменных")
             return null
+        }
+    }
+
+    private fun convertMockGetter(
+        currentLabel: String,
+        expression: GrShiftExpressionImpl,
+        replaceQueue: MutableList<Pair<PsiElement, PsiElement>>
+    ) {
+        //storage.preferences122 >> 33
+        val referenceExpression = (expression.leftOperand as? GrReferenceExpression) ?: return
+
+        if (currentLabel == TEST_LIFECYCLE_METHOD || currentLabel == GIVEN) {
+            print("изменяем в GIVEN")
+            val callObject = referenceExpression.firstChild.text
+            val propertyString = referenceExpression.lastChild.text
+
+            val newKotlinExpression = groovyFactory.createStatementFromText(
+                "whenever($callObject.$propertyString) doAnswer { ${expression.rightOperand?.text} }"
+            )
+
+            replaceQueue.add(Pair(expression, newKotlinExpression))
         }
     }
 

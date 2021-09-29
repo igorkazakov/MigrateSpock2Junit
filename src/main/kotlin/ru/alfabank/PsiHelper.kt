@@ -20,34 +20,6 @@ import org.jetbrains.plugins.groovy.lang.psi.util.childrenOfType
 
 private val LOG = Logger.getInstance("junitspock.PsiHelper")
 
-data class Range(val parent: PsiElement, val first: PsiElement, val last: PsiElement)
-
-fun GrMethod.voidReturnToDef() {
-    val factory = GroovyPsiElementFactory.getInstance(this.project)
-    val defModifier = factory.createModifierFromText(GrModifier.DEF)
-
-    // void -> def
-    this.returnTypeElementGroovy?.replace(defModifier)
-}
-
-fun PsiElement.createComment(text: String): Range {
-    val factory = GroovyPsiElementFactory.getInstance(this.project)
-    // linebreak required otherwise -> def foo () {expression // "comment"}
-    val methodBody = factory.createMethodBodyFromText("""
-                                    expression // $text
-                                """)
-    val comment = methodBody.childrenOfType<PsiComment>()[0]
-    return Range(methodBody, comment.prevSibling, comment)
-}
-
-fun PsiElement.addRangeAfter(range: Range) {
-    this.parent.addRangeAfter(range.first, range.last, this)
-}
-
-fun GrMethod.removeStaticModifier() {
-    this.modifierList.setModifierProperty(GrModifier.STATIC, false)
-}
-
 fun PsiElement.replaceElement(replacement: PsiElement) {
     this.parent.addAfter(replacement, this)
     this.delete()
@@ -67,7 +39,6 @@ fun GrMethod.deleteSingleQuotesFromMethodName() {
 fun GrModifierList.replaceDefWith(modifier: String) {
     val funModifier = GroovyPsiElementFactory.getInstance(project).createModifierFromText(modifier)
     val defModifier = this.modifiers.firstOrNull { it.text == "def" }
-    //defModifier?.replace(funModifier)
     add(funModifier)
     defModifier?.delete()
 }
@@ -84,22 +55,6 @@ fun PsiFile.getPsiClass(): PsiClass? {
         }
     }
     return null
-}
-
-/**
- * If [this] has 2 arguments, function [two] is called. If 3 that function [three], ...
- */
-fun GrArgumentList.withArgs(one: ((GrExpression) -> GrExpression)? = null,
-                                    two: ((GrExpression, GrExpression) -> GrExpression)? = null,
-                                    three: ((GrExpression, GrExpression, GrExpression) -> GrExpression)? = null) : GrExpression? {
-    val expressionArguments = this.expressionArguments
-
-    return when {
-        expressionArguments.size == 1 && one != null -> one(expressionArguments[0])
-        expressionArguments.size == 2 && two != null -> two(expressionArguments[0], expressionArguments[1])
-        expressionArguments.size == 3 && three != null -> three(expressionArguments[0], expressionArguments[1], expressionArguments[2])
-        else -> null
-    }
 }
 
 fun GroovyFile.addImportStatement(importString: String) {

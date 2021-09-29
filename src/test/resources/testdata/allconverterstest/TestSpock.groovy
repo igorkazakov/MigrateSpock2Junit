@@ -56,6 +56,7 @@ class Mediator extends ElectricSpecification {
     def 'should open AboutActivity'() {
         given:
         def versionName = "10.3.2.1"
+        storage.preferences122 >> 33
         def versionCode = 1030204
         interactor.executeTransferForOperationConfirmation(*_) >> { _, SingleObserver<FinalPaymentResponse> observer ->
             Single.just(expectedFinalPaymentResponse).subscribe(observer)

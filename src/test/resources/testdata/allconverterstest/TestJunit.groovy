@@ -46,8 +46,16 @@ class Mediator {
         on { getString(eq(R.string.card_common_action_section_info), any(), any()) } doReturn "Информация"
     }
 
-    fun createOperationTime() {
+    fun createOperationTime() : Any {
         return CalendarTestUtils.getCalendar(2003, Calendar.FEBRUARY, 25, 10, 15, 0)
+    }
+
+    fun sunction() : Any {
+        return ExceptionTest().getException(2003)
+    }
+
+    fun sunctionInt() : Integer {
+        return 34
     }
 
     @Test
@@ -59,6 +67,7 @@ class Mediator {
         whenever(featureCacheCleaner.loadData()).doReturn(null)
         whenever(view.show222Options1Dialog(any())).doReturn(null)
         whenever(resourcesWrapper.getString(eq(R.string.base_device_list_last_entered_at), any(), any())).doReturn("Последний вход 5 минут назад")
+        whenever(storage.preferences122) doAnswer { 33 }
         val versionCode = 1030204
         whenever(interactor.executeTransferForOperationConfirmation(any())) doAnswer {
             val observer = it.arguments[1] as SingleObserver<FinalPaymentResponse>
