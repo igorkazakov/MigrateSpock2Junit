@@ -69,227 +69,228 @@ class SpockToJunitConverter(
         get() = typeDefinition.containingFile as GroovyFile
 
     fun transformToJunit() {
-        deleteAllNewKeyWord()
-        // add runwith annotation and delete extends
         WriteCommandAction.runWriteCommandAction(project, null, null, {
 
-            val parentClass = (typeDefinition.extendsClause as GrExtendsClauseImpl).lastChild.text
+            deleteAllNewKeyWord()
 
-            val testRunnerClass = if (parentClass == "Specification") {
-                "AlfaJUnit4Runner"
-            } else {
-                "AlfaRobolectricRunner"
-            }
+            convertTestClassDeclaration()
 
-            typeDefinition.modifierList?.addAnnotation("RunWith($testRunnerClass::class)")
+            convertPropertiesAnnotations()
 
-            groovyFile.addImportStatement("org.junit.runner.RunWith")
-            groovyFile.addImportStatement("ru.alfabank.stubs.$testRunnerClass")
+            convertMethodsDeclaration()
 
-            (typeDefinition.extendsClause as GrExtendsClauseImpl).delete()
+            convertSpockTestLabels()
 
-        }, psiFile)
+            convertMethodsStatements()
 
-        WriteCommandAction.runWriteCommandAction(project, null, null, Runnable {
-
-            for (field in typeDefinition.codeFields) {
-                //change properties annotations
-                field.annotations.map { annotation ->
-
-                    val newAnnotation = when (annotation.text) {
-                        "@ClassRule" -> {
-                            groovyFile.addImportStatement("org.junit.Rule")
-                            groovyFactory.createAnnotationFromText("@Rule")
-                        }
-                        "@Shared" -> {
-                            groovyFile.addImportStatement("kotlin.jvm.JvmField")
-                            groovyFactory.createAnnotationFromText("@JvmField")
-                        }
-                        else -> groovyFactory.createAnnotationFromText("@JvmField777")
-                    }
-                    annotation.replace(newAnnotation)
-                }
-
-                //change fields syntax
-                convertVariableDeclaration(field)
-            }
+            addMethodsReturnType()
 
         }, psiFile)
+    }
 
-        //change method declaration
-        WriteCommandAction.runWriteCommandAction(project, null, null, {
-
-            for (method in typeDefinition.codeMethods) {
-
-                //change def with fun
-                method.modifierList.replaceDefWith("fun")
-
-                //change method name
-                method.deleteSingleQuotesFromMethodName()
-
-                //check is the test????
-                val methodBlock = method.block as GrOpenBlock
-                if (methodBlock.text.contains("given:") ||
-                    methodBlock.text.contains("when:") ||
-                    methodBlock.text.contains("expect:")
-                ) {
-                    // delete all annotations
-                    method.modifierList.annotations.forEach {
-                        it.nextSibling.delete()
-                        it.delete()
-                    }
-
-                    if (methodBlock.text.contains("where:")) {
-                        //convert @Unroll !!!!
-                        createArgumentProvider(method)
-                    } else {
-                        // add test annotation
-                        groovyFile.addImportStatement("org.junit.Test")
-                        method.modifierList.addAnnotation("Test")
-                    }
-                } else {
-                    // not test methods
-
-                    when (method.name) {
-                        "setup" -> {
-                            // add test lifecycle annotations
-                            groovyFile.addImportStatement("org.junit.Before")
-                            method.modifierList.addAnnotation("Before")
-                        }
-                        "cleanupSpec" -> {
-                            // add test lifecycle annotations
-                            groovyFile.addImportStatement("org.junit.After")
-                            method.modifierList.addAnnotation("After")
-                        }
-                    }
-                }
-            }
-
-        }, psiFile)
-
-        //change spock section labels with comment
-        WriteCommandAction.runWriteCommandAction(project, null, null, {
-
-            for (method in typeDefinition.codeMethods) {
-                var element = method.body?.firstBodyElement ?: continue
-                while (element.nextSibling != null) {
-                    element = element.nextSibling
-                    if (element is GrLabeledStatement) {
-                        val comment = element.createCommentElement(element.firstChild.text)
-                        element.firstChild.nextSibling.delete()
-                        element.firstChild.replace(comment)
-                    }
-                }
-            }
-        }, psiFile)
-
-
+    private fun convertMethodsStatements() {
         // изменяем внутрянку метода
-        WriteCommandAction.runWriteCommandAction(project, null, null, {
+        for (method in typeDefinition.codeMethods) {
+            val replaceQueue = mutableListOf<Pair<PsiElement, PsiElement>>()
+            convertMethodArguments(method)
 
-            for (method in typeDefinition.codeMethods) {
-                val replaceQueue = mutableListOf<Pair<PsiElement, PsiElement>>()
-                convertMethodArguments(method)
+            if (!method.isTestMethod()) continue
+            var element = method.body?.firstBodyElement ?: continue
 
-                if (!method.isTestMethod()) continue
-                var element = method.body?.firstBodyElement ?: continue
+            givenBlockFirstElement = if ((element.nextSibling.firstChild as? PsiCommentImpl)?.text == GIVEN) {
+                element.nextSibling
+            } else {
+                element
+            }
+            var currentLabel = TEST_LIFECYCLE_METHOD
+            while (element.nextSibling != null) {
+                element = element.nextSibling
 
-                givenBlockFirstElement = if ((element.nextSibling.firstChild as? PsiCommentImpl)?.text == GIVEN) {
-                    element.nextSibling
-                } else {
-                    element
-                }
-                var currentLabel = TEST_LIFECYCLE_METHOD
-                while (element.nextSibling != null) {
-                    element = element.nextSibling
+                // изменяем выражения в блоках given when then expect
+                element.let {
+                    when (it) {
+                        is GrLabeledStatement -> {
+                            if (it.firstChild.text != AND_LABEL) {
+                                //меняем контекст, так как для given when и then нужно по разному конвертировать выражения,
+                                // для and не нужно менять контекст!
+                                currentLabel = it.firstChild.text
+                            }
+                            (it.lastChild as? GrVariableDeclaration)?.variables?.first()?.let { variable ->
+                                convertVariableDeclaration(variable)
+                            }
 
-                    // изменяем выражения в блоках given when then expect
-                    element.let {
-                        when (it) {
-                            is GrLabeledStatement -> {
-                                if (it.firstChild.text != AND_LABEL) {
-                                    //меняем контекст, так как для given when и then нужно по разному конвертировать выражения,
-                                    // для and не нужно менять контекст!
-                                    currentLabel = it.firstChild.text
-                                }
-                                (it.lastChild as? GrVariableDeclaration)?.variables?.first()?.let { variable ->
-                                    convertVariableDeclaration(variable)
-                                }
-
-                                (it.lastChild as? GrMethodCallExpression)?.let { callExpr ->
-                                    convertCallMethods(currentLabel, callExpr, replaceQueue)
-                                }
-                                (it.lastChild as? GrRelationalExpressionImpl)?.let { callExpr ->
-                                    convertAssertTwoOperand(currentLabel, callExpr, replaceQueue)
-                                }
-                                (it.lastChild as? GrMultiplicativeExpressionImpl)?.let { callExpr ->
-                                    convertAssertCallNumber(currentLabel, callExpr, replaceQueue)
-                                }
-                                (it.lastChild as? GrShiftExpressionImpl)?.let { callExpr ->
-                                    convertAssertCallNumberWithArguments(currentLabel, callExpr, replaceQueue)
-                                    convertMockCallMethod(currentLabel, callExpr, replaceQueue)
-                                    convertMockGetter(currentLabel, callExpr, replaceQueue)
-                                }
+                            (it.lastChild as? GrMethodCallExpression)?.let { callExpr ->
+                                convertCallMethods(currentLabel, callExpr, replaceQueue)
                             }
-                            is GrVariableDeclaration -> {
-                                convertVariableDeclaration(it.variables.first())
+                            (it.lastChild as? GrRelationalExpressionImpl)?.let { callExpr ->
+                                convertAssertTwoOperand(currentLabel, callExpr, replaceQueue)
                             }
-                            is GrMethodCallExpression -> {
-                                convertCallMethods(currentLabel, it, replaceQueue)
+                            (it.lastChild as? GrMultiplicativeExpressionImpl)?.let { callExpr ->
+                                convertAssertCallNumber(currentLabel, callExpr, replaceQueue)
                             }
-                            is GrRelationalExpressionImpl -> {
-                                convertAssertTwoOperand(currentLabel, it, replaceQueue)
+                            (it.lastChild as? GrShiftExpressionImpl)?.let { callExpr ->
+                                convertAssertCallNumberWithArguments(currentLabel, callExpr, replaceQueue)
+                                convertMockCallMethod(currentLabel, callExpr, replaceQueue)
+                                convertMockGetter(currentLabel, callExpr, replaceQueue)
                             }
-                            is GrMultiplicativeExpressionImpl -> {
-                                convertAssertCallNumber(currentLabel, it, replaceQueue)
-                            }
-                            is GrShiftExpressionImpl -> {
-                                convertAssertCallNumberWithArguments(currentLabel, it, replaceQueue)
-                                convertMockCallMethod(currentLabel, it, replaceQueue)
-                                convertMockGetter(currentLabel, it, replaceQueue)
-                            }
-                            else -> {
-                                print("изменяем внутрянку метода else блок для переменных")
-                            }
+                        }
+                        is GrVariableDeclaration -> {
+                            convertVariableDeclaration(it.variables.first())
+                        }
+                        is GrMethodCallExpression -> {
+                            convertCallMethods(currentLabel, it, replaceQueue)
+                        }
+                        is GrRelationalExpressionImpl -> {
+                            convertAssertTwoOperand(currentLabel, it, replaceQueue)
+                        }
+                        is GrMultiplicativeExpressionImpl -> {
+                            convertAssertCallNumber(currentLabel, it, replaceQueue)
+                        }
+                        is GrShiftExpressionImpl -> {
+                            convertAssertCallNumberWithArguments(currentLabel, it, replaceQueue)
+                            convertMockCallMethod(currentLabel, it, replaceQueue)
+                            convertMockGetter(currentLabel, it, replaceQueue)
+                        }
+                        else -> {
+                            print("изменяем внутрянку метода else блок для переменных")
                         }
                     }
                 }
-
-                replaceQueue.forEach {
-                    it.first.replace(it.second)
-                }
-                replaceQueue.clear()
             }
 
-        }, psiFile)
+            replaceQueue.forEach {
+                it.first.replace(it.second)
+            }
+            replaceQueue.clear()
+        }
+    }
 
-        addMethodsReturnType()
+    private fun convertSpockTestLabels() {
+        //change spock section labels with comment
+        for (method in typeDefinition.codeMethods) {
+            var element = method.body?.firstBodyElement ?: continue
+            while (element.nextSibling != null) {
+                element = element.nextSibling
+                if (element is GrLabeledStatement) {
+                    val comment = element.createCommentElement(element.firstChild.text)
+                    element.firstChild.nextSibling.delete()
+                    element.firstChild.replace(comment)
+                }
+            }
+        }
+    }
+
+    private fun convertMethodsDeclaration() {
+        //change method declaration
+        for (method in typeDefinition.codeMethods) {
+
+            //change def with fun
+            method.modifierList.replaceDefWith("fun")
+
+            //change method name
+            method.deleteSingleQuotesFromMethodName()
+
+            //check is the test????
+            val methodBlock = method.block as GrOpenBlock
+            if (methodBlock.text.contains("given:") ||
+                methodBlock.text.contains("when:") ||
+                methodBlock.text.contains("expect:")
+            ) {
+                // delete all annotations
+                method.modifierList.annotations.forEach {
+                    it.nextSibling.delete()
+                    it.delete()
+                }
+
+                if (methodBlock.text.contains("where:")) {
+                    //convert @Unroll !!!!
+                    createArgumentProvider(method)
+                } else {
+                    // add test annotation
+                    groovyFile.addImportStatement("org.junit.Test")
+                    method.modifierList.addAnnotation("Test")
+                }
+            } else {
+                // not test methods
+
+                when (method.name) {
+                    "setup" -> {
+                        // add test lifecycle annotations
+                        groovyFile.addImportStatement("org.junit.Before")
+                        method.modifierList.addAnnotation("Before")
+                    }
+                    "cleanupSpec" -> {
+                        // add test lifecycle annotations
+                        groovyFile.addImportStatement("org.junit.After")
+                        method.modifierList.addAnnotation("After")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun convertPropertiesAnnotations() {
+        for (field in typeDefinition.codeFields) {
+            //change properties annotations
+            field.annotations.map { annotation ->
+
+                val newAnnotation = when (annotation.text) {
+                    "@ClassRule" -> {
+                        groovyFile.addImportStatement("org.junit.Rule")
+                        groovyFactory.createAnnotationFromText("@Rule")
+                    }
+                    "@Shared" -> {
+                        groovyFile.addImportStatement("kotlin.jvm.JvmField")
+                        groovyFactory.createAnnotationFromText("@JvmField")
+                    }
+                    else -> groovyFactory.createAnnotationFromText("@JvmField777")
+                }
+                annotation.replace(newAnnotation)
+            }
+
+            //change fields syntax
+            convertVariableDeclaration(field)
+        }
+    }
+
+    private fun convertTestClassDeclaration() {
+        // add runwith annotation and delete extends
+        val parentClass = (typeDefinition.extendsClause as GrExtendsClauseImpl).lastChild.text
+
+        val testRunnerClass = if (parentClass == "Specification") {
+            "AlfaJUnit4Runner"
+        } else {
+            "AlfaRobolectricRunner"
+        }
+
+        typeDefinition.modifierList?.addAnnotation("RunWith($testRunnerClass::class)")
+
+        groovyFile.addImportStatement("org.junit.runner.RunWith")
+        groovyFile.addImportStatement("ru.alfabank.stubs.$testRunnerClass")
+
+        (typeDefinition.extendsClause as GrExtendsClauseImpl).delete()
     }
 
     private fun addMethodsReturnType() {
-        WriteCommandAction.runWriteCommandAction(project, null, null, {
-            for (method in typeDefinition.codeMethods) {
+        for (method in typeDefinition.codeMethods) {
 
-                val returnStatement = method.getReturnStatement()
-                if (returnStatement != null) {
-                    // как то достать тип из return statement
-                    val throwElement = groovyFactory.createThrownList(arrayOf(psiFile.getPsiClass()?.type()))
-                    val replacedElement = method.throwsList.replace(throwElement)
-                    val returnType = returnStatement.returnValue?.type?.presentableText ?: "Any"
-                    replaceWithKotlinMethodReturnType(replacedElement, returnType)
-                }
+            val returnStatement = method.getReturnStatement()
+            if (returnStatement != null) {
+                // как то достать тип из return statement
+                val throwElement = groovyFactory.createThrownList(arrayOf(psiFile.getPsiClass()?.type()))
+                val replacedElement = method.throwsList.replace(throwElement)
+                val returnType = returnStatement.returnValue?.type?.presentableText ?: "Any"
+                replaceWithKotlinMethodReturnType(replacedElement, returnType)
             }
-        }, psiFile)
+        }
     }
 
     private fun deleteAllNewKeyWord() {
-        WriteCommandAction.runWriteCommandAction(project, null, null, {
-            recursivelyVisitAllElements(psiFile) {
-                if (it is GrNewExpression) {
-                    it.navigationElement.firstChild.delete()
-                }
+        recursivelyVisitAllElements(psiFile) {
+            if (it is GrNewExpression) {
+                it.navigationElement.firstChild.delete()
             }
-        }, psiFile)
+        }
     }
 
     private fun recursivelyVisitAllElements(source: PsiElement, visitAction: (element: GroovyPsiElement) -> Unit) {
