@@ -4,21 +4,22 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.project.DumbService
-import com.intellij.psi.PsiManager
+import org.jetbrains.plugins.groovy.GroovyFileType
+import ru.alfabank.FileHelper
 import ru.alfabank.converters.SpockToJunitConverter
 
 class ConvertSpockToJunit : AnAction() {
 
     override fun update(event: AnActionEvent) {
-//        val file = event.getData(PlatformDataKeys.VIRTUAL_FILE)
-//        val editor = event.getData(PlatformDataKeys.EDITOR)
-//
-//        val enabled = file != null &&
-//                editor != null &&
-//                (JavaFileType.INSTANCE == file.fileType)
-//
-//        event.presentation.isEnabled = enabled
-//                && !DumbService.isDumb(event.project!!)
+        val file = event.getData(PlatformDataKeys.VIRTUAL_FILE)
+        val editor = event.getData(PlatformDataKeys.EDITOR)
+
+        val enabled = file != null &&
+                editor != null &&
+                (GroovyFileType.GROOVY_FILE_TYPE == file.fileType)
+
+        event.presentation.isEnabled = enabled
+                && !DumbService.isDumb(event.project!!)
 
     }
 
@@ -30,13 +31,10 @@ class ConvertSpockToJunit : AnAction() {
 //        val newfile = currentFile.copy(currentFile, currentFile.parent, "qwerty123")
 //
 //        val newfile22 = KotlinPsiFileFactory().acquirePsiFileFactory().createFileFromText("qwertyKotlin.kt", KotlinLanguage.INSTANCE, "")
-        val groovyPsiFile = requireNotNull(PsiManager.getInstance(project).findFile(currentFile))
+       // val groovyPsiFile = requireNotNull(PsiManager.getInstance(project).findFile(currentFile))
 
-        DumbService.getInstance(project).runWhenSmart {
+        FileHelper.createKotlinRootAndMoveFile(project, currentFile) { groovyPsiFile ->
             SpockToJunitConverter(project, editor, groovyPsiFile).transformToJunit()
         }
-        //FileHelper.createKotlinRootAndMoveFile(project, currentFile) { groovyPsiFile ->
-
-       // }
     }
 }

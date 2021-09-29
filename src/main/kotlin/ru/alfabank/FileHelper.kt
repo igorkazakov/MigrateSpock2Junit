@@ -22,27 +22,25 @@ object FileHelper {
     fun createKotlinRootAndMoveFile(
         project: Project,
         currentFile: VirtualFile,
-        postKotlinRootCreationActions: (PsiFile) -> Unit
+        postJavaRootCreationActions: (PsiFile) -> Unit
     ) {
-        val kotlinSourceRoot = createKotlinSourceRoot(project, currentFile)
+        val javaSourceRoot = createJavaSourceRoot(project, currentFile)
 
-        if (kotlinSourceRoot != null) {
-            /*  creating kotlinSourceRoot creates indexing therefore the following
+        if (javaSourceRoot != null) {
+            /*  creating javaSourceRoot creates indexing therefore the following
                 actions must be deferred
              */
             DumbService.getInstance(project).runWhenSmart {
-                renameAndMoveToKotlin(currentFile, kotlinSourceRoot, project)
-                // old PSI is wrong as moved and renamed
                 val groovyPsiFile = requireNotNull(PsiManager.getInstance(project).findFile(currentFile))
-//!!! взять psi файл грувишный и отдать на разбор
-                postKotlinRootCreationActions(groovyPsiFile)
-            }
+                //!!! взять psi файл грувишный и отдать на разбор
+                postJavaRootCreationActions(groovyPsiFile)
 
-            // no action must occur here
+                renameAndMoveToJava(currentFile, javaSourceRoot, project)
+            }
         }
     }
 
-    private fun createKotlinSourceRoot(project: Project?, currentFile: VirtualFile): VirtualFile? {
+    private fun createJavaSourceRoot(project: Project?, currentFile: VirtualFile): VirtualFile? {
         val sourceRootForCurrentFile = getSourceRootForCurrentFile(project, currentFile)
         if (sourceRootForCurrentFile.isPresent) {
             val file = sourceRootForCurrentFile.get()
@@ -97,8 +95,8 @@ object FileHelper {
         return Arrays.stream(sourceRoots).filter { sourceRoot -> VfsUtilCore.isAncestor(sourceRoot, currentFile, true) }.findAny()
     }
 
-    private fun renameAndMoveToKotlin(currentFile: VirtualFile, kotlinSourcesRoot: VirtualFile, project: Project?) {
-        assert(kotlinSourcesRoot.exists())
+    private fun renameAndMoveToJava(currentFile: VirtualFile, javaSourcesRoot: VirtualFile, project: Project?) {
+        assert(javaSourcesRoot.exists())
 
         val sourceRootForCurrentFile = getSourceRootForCurrentFile(project, currentFile)
 
@@ -111,7 +109,7 @@ object FileHelper {
             WriteAction.run<IOException> {
                 val kotlinFilename = currentFile.name.replace(".groovy", ".kt")
                 currentFile.rename(this, kotlinFilename)
-                var lastCreatedDir = kotlinSourcesRoot
+                var lastCreatedDir = javaSourcesRoot
 
                 for (packageElement in relativePathForPackageName!!.split("\\.".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()) {
                     val childWithPackageName = lastCreatedDir.findChild(packageElement)
@@ -121,6 +119,8 @@ object FileHelper {
                         lastCreatedDir.createChildDirectory(this, packageElement)
                     }
                 }
+                //val newFile = currentFile.copy(this, lastCreatedDir, currentFile.name)
+                //val kotlinFilename = newFile.name.replace(".groovy", ".kt")
                 currentFile.move(this, lastCreatedDir)
             }
         } catch (e: IOException) {
